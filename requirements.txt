@@ -1,0 +1,38 @@
+# --- Framework ---
+Django>=5.0,<5.2
+djangorestframework>=3.15
+djangorestframework-simplejwt>=5.3
+django-cors-headers>=4.4
+
+# --- Tâches asynchrones & cron ---
+celery>=5.4
+django-celery-beat>=2.6
+redis>=5.0
+
+# --- Base de données ---
+psycopg[binary]>=3.2
+
+# --- Stockage objet (Cloudflare R2 / S3) ---
+django-storages>=1.14
+boto3>=1.34
+
+# --- Sécurité ---
+argon2-cffi>=23.1
+
+# --- Configuration ---
+django-environ>=0.11
+
+# --- Client HTTP (API Swinmo) ---
+requests>=2.32
+
+# --- Documentation API (OpenAPI 3 / Swagger UI / Redoc) ---
+drf-spectacular>=0.27
+
+# --- Serveur WSGI (prod) ---
+gunicorn>=22.0
+
+# --- Images (avatars, miniatures) ---
+Pillow>=10.4
+
+# --- Observabilité (optionnel) ---
+sentry-sdk>=2.0
