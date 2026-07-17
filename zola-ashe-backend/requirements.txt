@@ -37,6 +37,9 @@ gunicorn>=22.0
 # --- Images (avatars, miniatures) ---
 Pillow>=10.4
 
+# --- Génération de documents Word (mémoires autobiographiques) ---
+python-docx>=1.1
+
 # --- Observabilité (optionnel) ---
 sentry-sdk>=2.0
 

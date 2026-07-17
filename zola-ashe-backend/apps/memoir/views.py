@@ -38,13 +38,6 @@ class MemoirDraftView(APIView):
     )
     def patch(self, request):
         draft, _ = MemoirDraft.objects.get_or_create(user=request.user)
-
-        if draft.status == DraftStatus.SUBMITTED:
-            return Response(
-                {"detail": "Ce dossier a déjà été soumis et ne peut plus être modifié."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         serializer = MemoirDraftSerializer(draft, data=request.data, partial=True)
         serializer.is_valid(raise_exception=True)
         serializer.save()
@@ -65,15 +58,13 @@ class MemoirSubmitView(APIView):
         summary="Soumettre définitivement le dossier Mon Histoire",
     )
     def post(self, request):
+        from .tasks import send_memoir_to_admin
+
         draft, _ = MemoirDraft.objects.get_or_create(user=request.user)
-
-        if draft.status == DraftStatus.SUBMITTED:
-            return Response(
-                {"detail": "Ce dossier a déjà été soumis."},
-                status=status.HTTP_400_BAD_REQUEST,
-            )
-
         draft.submit()
+
+        send_memoir_to_admin.delay(draft.id)
+
         return Response(
             {
                 "detail": "Votre histoire a bien été soumise. L'équipe éditoriale vous contactera prochainement.",
