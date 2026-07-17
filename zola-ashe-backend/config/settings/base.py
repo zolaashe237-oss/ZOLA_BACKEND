@@ -229,8 +229,13 @@ SIMPLE_JWT = {
 ADMIN_ACCESS_TOKEN_LIFETIME = timedelta(hours=4)    # session admin courte (CDC §5.1)
 
 # --- CORS / CSRF (frontend Next.js) -----------------------------------------
-CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=["http://localhost:3000"])
-CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=["http://localhost:3000"]) + ["https://*.vercel.app"]
+CUSTOM_DOMAINS = [
+    "https://zola-ashe.com",
+    "https://www.zola-ashe.com",
+    "https://dashboard.zola-ashe.com"
+]
+CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=["http://localhost:3000"]) + CUSTOM_DOMAINS
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=["http://localhost:3000"]) + ["https://*.vercel.app"] + CUSTOM_DOMAINS
 
 CORS_ALLOWED_ORIGIN_REGEXES = [
     r"^https://.*\.vercel\.app$",
