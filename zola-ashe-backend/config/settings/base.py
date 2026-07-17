@@ -230,7 +230,12 @@ ADMIN_ACCESS_TOKEN_LIFETIME = timedelta(hours=4)    # session admin courte (CDC 
 
 # --- CORS / CSRF (frontend Next.js) -----------------------------------------
 CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=["http://localhost:3000"])
-CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=["http://localhost:3000"])
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=["http://localhost:3000"]) + ["https://*.vercel.app"]
+
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://.*\.vercel\.app$",
+]
+
 # Les frontends envoient le cookie refresh (axios withCredentials) → le navigateur
 # exige Access-Control-Allow-Credentials: true, sinon il bloque TOUTE réponse (login compris).
 CORS_ALLOW_CREDENTIALS = True
