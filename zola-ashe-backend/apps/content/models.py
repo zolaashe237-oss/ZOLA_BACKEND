@@ -18,10 +18,10 @@ from django.utils import timezone
 
 
 class Branche(models.TextChoices):
-    """Branche cible d'un contenu (utilisée par Audio, LibraryPdf, LiveSession)."""
-    GENERALE = "GENERALE", "Générale"
-    FEMME = "FEMME", "Femmes"
-    ENFANT = "ENFANT", "Enfants"
+    """Branche cible d'un contenu (utilisée par Formation, Audio, LibraryPdf, LiveSession)."""
+    MEMBRE  = "MEMBRE",  "Membres"
+    FEMME   = "FEMME",   "Femmes"
+    ENFANT  = "ENFANT",  "Enfants"
 
 
 class AccessLevel(models.TextChoices):
@@ -70,12 +70,14 @@ class Formation(models.Model):
     description = models.TextField(blank=True)
     category    = models.CharField(max_length=10, choices=Category.choices, default=Category.FORMATION)
     slug        = models.SlugField(max_length=220, unique=True, blank=True)
-    branch      = models.CharField(max_length=10, choices=Branche.choices, default=Branche.GENERALE)
+    branch      = models.CharField(max_length=10, choices=Branche.choices, default=Branche.MEMBRE)
     level       = models.CharField(max_length=15, choices=LevelChoice.choices, blank=True)
 
-    # Accès : liste vide = PUBLIC (tout membre non bloqué) ; ["MEMBRE"] = RÉSERVÉ
+    # Accès : liste vide = pour tous les membres connectés ; ["MEMBRE"] = RÉSERVÉ
     # (membre actif). Codes de billing.SubscriptionType (RG-22).
     access_subscription_types = models.JSONField(default=list, blank=True)
+    # Contenu public : visible par les visiteurs non connectés (landing page, SEO)
+    is_public = models.BooleanField(default=False)
 
     cover_url = models.URLField(blank=True)                   # couverture externe (legacy/seed)
     cover_key = models.CharField(max_length=512, blank=True)  # couverture hébergée (signée)
@@ -164,6 +166,7 @@ class Resource(models.Model):
     video_source = models.CharField(max_length=10, choices=VideoSource.choices,
                                     default=VideoSource.UPLOAD, blank=True)
     youtube_url = models.URLField(blank=True)  # si video_source = YOUTUBE
+    transcript_text = models.TextField(blank=True)  # transcription auto-fetched pour génération IA
 
     # --- Fichier hébergé (vidéo upload / PDF / audio) : clé jamais exposée ---
     bucket_key = models.CharField(max_length=512, blank=True)
@@ -288,7 +291,7 @@ class LiveSession(models.Model):
     status = models.CharField(max_length=10, choices=Status.choices, default=Status.PLANIFIE)
     link = models.URLField(blank=True, max_length=512)
     replay_url = models.URLField(blank=True, max_length=512)
-    branche = models.CharField(max_length=10, choices=Branche.choices, default=Branche.GENERALE)
+    branche = models.CharField(max_length=10, choices=Branche.choices, default=Branche.MEMBRE)
     tags = models.JSONField(default=list, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
@@ -306,7 +309,7 @@ class Audio(models.Model):
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     category = models.CharField(max_length=100, blank=True)
-    branche = models.CharField(max_length=10, choices=Branche.choices, default=Branche.GENERALE)
+    branche = models.CharField(max_length=10, choices=Branche.choices, default=Branche.MEMBRE)
     access_level = models.CharField(max_length=10, choices=AccessLevel.choices, default=AccessLevel.PUBLIC)
     bucket_key = models.CharField(max_length=512, blank=True)
     cover_url = models.URLField(blank=True)
@@ -331,7 +334,7 @@ class LibraryPdf(models.Model):
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True)
     category = models.CharField(max_length=100, blank=True)
-    branche = models.CharField(max_length=10, choices=Branche.choices, default=Branche.GENERALE)
+    branche = models.CharField(max_length=10, choices=Branche.choices, default=Branche.MEMBRE)
     access_level = models.CharField(max_length=10, choices=AccessLevel.choices, default=AccessLevel.PUBLIC)
     bucket_key = models.CharField(max_length=512, blank=True)
     cover_url = models.URLField(blank=True)

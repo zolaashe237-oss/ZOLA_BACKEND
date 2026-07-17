@@ -39,6 +39,7 @@ urlpatterns = [
     path("api/admin/", include("apps.admin_api.urls")),
     path("api/", include("apps.notifications.urls")),
     path("api/", include("apps.ai_quiz.urls")),
+    path("api/memoir/", include("apps.memoir.urls")),
 ]
 
 # En développement, servir les fichiers media uploadés localement.

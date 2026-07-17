@@ -26,7 +26,7 @@ class CommunityChannel(models.Model):
     name = models.CharField(max_length=100)
     slug = models.SlugField(max_length=100, unique=True)
     description = models.TextField(blank=True)
-    branche = models.CharField(max_length=10, choices=Branche.choices, default=Branche.GENERALE)
+    branche = models.CharField(max_length=10, choices=Branche.choices, default=Branche.MEMBRE)
     color = models.CharField(max_length=20, default="#c9a227")
     is_active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)

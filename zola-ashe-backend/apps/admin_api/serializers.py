@@ -166,7 +166,7 @@ class AdminFormationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Formation
         fields = ("id", "title", "description", "category", "branche", "niveau",
-                  "access_subscription_types", "cover_url", "cover_key",
+                  "access_subscription_types", "is_public", "cover_url", "cover_key",
                   "status", "publish_at", "order", "module_count", "created_at", "updated_at")
         read_only_fields = ("id", "created_at", "updated_at")
 
@@ -235,8 +235,8 @@ class AdminResourceSerializer(serializers.ModelSerializer):
         fields = ("id", "course", "resource_type", "title", "description", "order",
                   "video_source", "youtube_url", "bucket_key", "thumbnail_url",
                   "thumbnail_key", "thumbnail", "nb_pages", "duration_sec", "size_mo",
-                  "audio_format", "created_at")
-        read_only_fields = ("id", "created_at")
+                  "audio_format", "transcript_text", "created_at")
+        read_only_fields = ("id", "transcript_text", "created_at")
 
     def get_thumbnail(self, obj) -> str:
         from apps.content.services import generate_signed_url
@@ -604,3 +604,63 @@ class AdminTeamSerializer(serializers.ModelSerializer):
             instance.set_password(password)
             instance.save(update_fields=["password"])
         return instance
+
+
+# ─── Mémoires (demandes de rédaction) ────────────────────────────────────────
+
+from apps.memoir.models import MemoirDraft  # noqa: E402
+
+
+class AdminMemoirListSerializer(serializers.ModelSerializer):
+    """Résumé d'une soumission pour la liste admin."""
+
+    user_id      = serializers.IntegerField(source="user.id", read_only=True)
+    user_name    = serializers.CharField(source="user.full_name", read_only=True)
+    user_email   = serializers.EmailField(source="user.email", read_only=True)
+    user_phone   = serializers.CharField(source="user.phone", allow_null=True, read_only=True)
+    user_country = serializers.CharField(source="user.country", allow_null=True, read_only=True)
+    answers_count = serializers.SerializerMethodField()
+
+    class Meta:
+        model = MemoirDraft
+        fields = [
+            "id", "user_id", "user_name", "user_email", "user_phone", "user_country",
+            "submitted_at", "updated_at", "answers_count",
+            "editorial_status", "editorial_notes",
+        ]
+        read_only_fields = [
+            "id", "user_id", "user_name", "user_email", "user_phone", "user_country",
+            "submitted_at", "updated_at", "answers_count",
+        ]
+
+    @extend_schema_field(OpenApiTypes.INT)
+    def get_answers_count(self, obj: MemoirDraft) -> int:
+        answers = obj.answers
+        if not isinstance(answers, dict):
+            return 0
+        count = 0
+        for a in answers.values():
+            if not isinstance(a, dict):
+                continue
+            structured = a.get("structured", {})
+            has_structured = any(
+                (isinstance(v, list) and len(v) > 0) or (isinstance(v, str) and v.strip())
+                for v in structured.values()
+            )
+            if (
+                a.get("text", "").strip()
+                or a.get("audioTranscript", "").strip()
+                or a.get("notApplicable")
+                or has_structured
+                or bool(a.get("imageCaptions"))
+            ):
+                count += 1
+        return count
+
+
+class AdminMemoirDetailSerializer(AdminMemoirListSerializer):
+    """Détail complet d'une soumission (inclut les réponses)."""
+
+    class Meta(AdminMemoirListSerializer.Meta):
+        fields = AdminMemoirListSerializer.Meta.fields + ["answers"]
+        read_only_fields = AdminMemoirListSerializer.Meta.read_only_fields + ["answers"]
