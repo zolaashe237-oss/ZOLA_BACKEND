@@ -6,12 +6,65 @@ L'accès à une formation réservée délègue à `apps.billing.services.has_sub
 via `Formation.access_subscription_types` (le type `MEMBRE` ouvre l'accès aux
 membres actifs).
 """
+import logging
+import re
+
 from django.conf import settings
 from django.core.files.storage import default_storage
 from django.db.models import Q
 from django.utils import timezone
 
 from .models import Course, Formation, FormationStatus, Module, Quiz, QuizResult
+
+logger = logging.getLogger(__name__)
+
+# ─── Transcription YouTube ────────────────────────────────────────────────────
+
+_YT_ID_PATTERNS = [
+    re.compile(r"[?&]v=([^&\s]+)"),
+    re.compile(r"youtu\.be/([^?&\s]+)"),
+    re.compile(r"/embed/([^?&\s]+)"),
+    re.compile(r"/shorts/([^?&\s]+)"),
+]
+
+
+def _extract_youtube_id(url: str) -> str | None:
+    for pattern in _YT_ID_PATTERNS:
+        m = pattern.search(url)
+        if m:
+            return m.group(1)
+    return None
+
+
+def fetch_youtube_transcript(youtube_url: str) -> str:
+    """Récupère la transcription d'une vidéo YouTube. Retourne '' en cas d'échec.
+
+    Préférence : français → anglais → première langue disponible.
+    Échoue silencieusement pour ne pas bloquer la sauvegarde d'une ressource.
+    Compatible youtube-transcript-api >= 0.6 (API instance-based).
+    """
+    video_id = _extract_youtube_id(youtube_url)
+    if not video_id:
+        return ""
+    try:
+        from youtube_transcript_api import YouTubeTranscriptApi
+        api = YouTubeTranscriptApi()
+        try:
+            # Tentative avec langues préférées (fr en priorité, puis en)
+            transcript = api.fetch(video_id, languages=["fr", "fr-FR", "fr-CA", "en"])
+        except Exception:
+            # Aucune langue demandée disponible — on prend la première trouvée
+            transcript_list = api.list(video_id)
+            first = next(iter(transcript_list))
+            transcript = first.fetch()
+        # Les snippets exposent .text (>=0.6) ou ["text"] (<=0.5)
+        return " ".join(
+            s.text if hasattr(s, "text") else s.get("text", "")
+            for s in transcript
+        ).strip()
+    except Exception as exc:
+        logger.debug("Transcript fetch failed for %s: %s", youtube_url, exc)
+        return ""
 
 
 # ─── Visibilité / publication programmée ────────────────────────────────────
@@ -81,10 +134,14 @@ def generate_signed_url(key: str) -> str:
 def formation_accessible(user, formation: Formation, accessible_types=None) -> bool:
     """Le membre détient-il un abonnement ouvrant cette formation ?
 
+    Visiteur non connecté : accessible seulement si `formation.is_public`.
     Formation publique (`access_subscription_types` vide) → accessible à tout
     membre non bloqué. Sinon, accès si le membre détient un abonnement actif de
     l'UN des types requis. BLOQUÉ n'accède à rien (RG-10).
     """
+    if not getattr(user, "is_authenticated", False):
+        return bool(formation.is_public)
+
     from apps.accounts.models import UserStatus
 
     if user.status == UserStatus.BLOQUE:

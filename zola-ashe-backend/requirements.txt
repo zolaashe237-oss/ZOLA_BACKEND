@@ -25,6 +25,9 @@ django-environ>=0.11
 # --- Client HTTP (API Swinmo) ---
 requests>=2.32
 
+# --- Transcription YouTube (source IA quiz SCRIPT) ---
+youtube-transcript-api>=0.6
+
 # --- Documentation API (OpenAPI 3 / Swagger UI / Redoc) ---
 drf-spectacular>=0.27
 

@@ -7,6 +7,7 @@ from apps.blog.views import AdminArticleViewSet
 from . import views_content as vc
 from . import views_finance as vf
 from . import views_members as vm
+from . import views_memoir as vmem
 from . import views_moderation as vmod
 from . import views_progression as vp
 from . import views_community as vcom
@@ -43,6 +44,7 @@ urlpatterns = [
     path("reminders/send/", vf.SendRemindersView.as_view(), name="admin-reminders"),
 
     # Contenu & quiz
+    path("formations/import-youtube/", vc.YoutubeImportView.as_view(), name="admin-youtube-import"),
     path("content/upload/", vc.ContentUploadView.as_view(), name="admin-content-upload"),
     path("quiz/results/", vc.AdminQuizResultListView.as_view(), name="admin-quiz-results"),
     path("quiz/score/", vc.QuizScoreView.as_view(), name="admin-quiz-score"),
@@ -54,6 +56,10 @@ urlpatterns = [
     path("comments/<int:pk>/delete/", vmod.AdminDeleteCommentView.as_view(), name="admin-comment-delete"),
     path("reports/", vmod.ReportQueueView.as_view(), name="admin-reports"),
     path("reports/<int:pk>/handle/", vmod.HandleReportView.as_view(), name="admin-report-handle"),
+
+    # Mémoires — demandes de rédaction autobiographique
+    path("memoir/", vmem.AdminMemoirListView.as_view(), name="admin-memoir-list"),
+    path("memoir/<int:pk>/", vmem.AdminMemoirDetailView.as_view(), name="admin-memoir-detail"),
 
     # Audit
     path("audit/", vmod.AuditLogListView.as_view(), name="admin-audit"),
