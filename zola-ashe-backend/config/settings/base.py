@@ -278,6 +278,9 @@ BREVO_API_KEY = env("BREVO_API_KEY", default="")
 # / réinitialisation reste complet. Désactivé dès qu'une clé Brevo est fournie.
 EMAIL_MOCK = env.bool("EMAIL_MOCK", default=not env("BREVO_SMTP_KEY", default=""))
 
+# Adresse éditoriale qui reçoit les mémoires soumis (document Word en pièce jointe)
+MEMOIR_ADMIN_EMAIL = env("MEMOIR_ADMIN_EMAIL", default="editions@zola-ashe.com")
+
 # --- Règles métier ZOLA ASHÉ (centralisées) ---------------------------------
 OTP_TTL_MINUTES = 15            # CDC §3.3
 OTP_MAX_ATTEMPTS = 3

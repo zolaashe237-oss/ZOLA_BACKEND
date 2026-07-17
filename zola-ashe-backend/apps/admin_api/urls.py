@@ -60,6 +60,7 @@ urlpatterns = [
     # Mémoires — demandes de rédaction autobiographique
     path("memoir/", vmem.AdminMemoirListView.as_view(), name="admin-memoir-list"),
     path("memoir/<int:pk>/", vmem.AdminMemoirDetailView.as_view(), name="admin-memoir-detail"),
+    path("memoir/<int:pk>/docx/", vmem.AdminMemoirDocxView.as_view(), name="admin-memoir-docx"),
 
     # Audit
     path("audit/", vmod.AuditLogListView.as_view(), name="admin-audit"),
