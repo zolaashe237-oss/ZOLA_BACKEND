@@ -24,7 +24,7 @@ class PromptValidationError(RuntimeError):
 # --- Contexte ZOLA ASHÉ ------------------------------------------------------
 
 BRANCH_TONE = {
-    "GENERALE": (
+    "MEMBRE": (
         "Ton adulte, bienveillant et respectueux. Vocabulaire spirituel africain "
         "accessible sans jargon obscur."
     ),
@@ -69,13 +69,17 @@ GENERATION_SCHEMA: dict[str, Any] = {
             "items": {
                 "type": "object",
                 "properties": {
-                    "kind": {"type": "string", "enum": ["QCM", "QRO"]},
+                    "kind": {"type": "string", "enum": ["QCM", "QCM_MULTI", "QRO"]},
                     "text": {"type": "string"},
                     "choices": {
                         "type": "array",
                         "items": {"type": "string"},
                     },
                     "correct_index": {"type": "integer"},
+                    "correct_indices": {
+                        "type": "array",
+                        "items": {"type": "integer"},
+                    },
                     "criteria": {
                         "type": "array",
                         "items": {"type": "string"},
@@ -121,20 +125,74 @@ def build_generation_prompt(
     source_text: str,
     module_title: str,
     module_description: str = "",
-    branch: str = "GENERALE",
+    branch: str = "MEMBRE",
     difficulty: str = "INTERMEDIAIRE",
     nb_questions: int = 5,
     ratio_qcm_qro: float = 0.6,
+    nb_qcm_multi: int = 0,
 ) -> str:
     """Construit le prompt de génération d'un quiz depuis un contenu source.
 
-    ratio_qcm_qro = fraction de QCM (0.6 → 60% QCM, 40% QRO).
+    ratio_qcm_qro = fraction de QCM au total (simple + multi) par rapport aux QRO.
+    nb_qcm_multi  = nombre de QCM à réponses multiples (sous-ensemble des QCM).
     """
-    tone = BRANCH_TONE.get(branch, BRANCH_TONE["GENERALE"])
+    tone = BRANCH_TONE.get(branch, BRANCH_TONE["MEMBRE"])
     diff_hint = DIFFICULTY_HINT.get(difficulty, DIFFICULTY_HINT["INTERMEDIAIRE"])
 
-    nb_qcm = round(nb_questions * ratio_qcm_qro)
-    nb_qro = nb_questions - nb_qcm
+    nb_qcm_total = round(nb_questions * ratio_qcm_qro)
+    nb_qcm_multi = max(0, min(nb_qcm_multi, nb_qcm_total))
+    nb_qcm_simple = nb_qcm_total - nb_qcm_multi
+    nb_qro = nb_questions - nb_qcm_total
+
+    # Build the per-type instruction lines (only mention types with count > 0).
+    type_lines = []
+    if nb_qcm_simple > 0:
+        type_lines.append(
+            f"  * {nb_qcm_simple} de type QCM : EXACTEMENT 4 choix, "
+            f"UNE seule bonne réponse, \"correct_index\" entre 0 et 3."
+        )
+    if nb_qcm_multi > 0:
+        type_lines.append(
+            f"  * {nb_qcm_multi} de type QCM_MULTI : 4 à 5 choix, "
+            f"PLUSIEURS bonnes réponses (exactement 2 ou 3), "
+            f"\"correct_indices\" = liste des indices corrects (ex : [0, 2])."
+        )
+    if nb_qro > 0:
+        type_lines.append(
+            f"  * {nb_qro} de type QRO : question à réponse ouverte, "
+            f"2 à 4 critères d'évaluation courts (10 à 20 mots chacun)."
+        )
+    types_block = "\n".join(type_lines)
+
+    # Build the JSON example block.
+    examples: list[str] = []
+    if nb_qcm_simple > 0:
+        examples.append(
+            '    {\n'
+            '      "kind": "QCM",\n'
+            '      "text": "...",\n'
+            '      "choices": ["...", "...", "...", "..."],\n'
+            '      "correct_index": 0\n'
+            '    }'
+        )
+    if nb_qcm_multi > 0:
+        examples.append(
+            '    {\n'
+            '      "kind": "QCM_MULTI",\n'
+            '      "text": "...",\n'
+            '      "choices": ["...", "...", "...", "...", "..."],\n'
+            '      "correct_indices": [0, 2]\n'
+            '    }'
+        )
+    if nb_qro > 0:
+        examples.append(
+            '    {\n'
+            '      "kind": "QRO",\n'
+            '      "text": "...",\n'
+            '      "criteria": ["Doit citer X", "Doit expliquer Y"]\n'
+            '    }'
+        )
+    examples_block = ",\n".join(examples)
 
     return f"""Tu es l'assistant pédagogique de la plateforme ZOLA ASHÉ, spécialisée
 dans la spiritualité africaine. Tu prépares un quiz à partir du contenu ci-dessous.
@@ -147,26 +205,17 @@ CONTEXTE MODULE :
 
 CE QUE TU DOIS PRODUIRE :
 - {nb_questions} questions au total :
-  * {nb_qcm} de type QCM (choix multiples)
-  * {nb_qro} de type QRO (question à réponse ouverte)
-- Chaque QCM : EXACTEMENT 4 choix, UNE seule bonne réponse, "correct_index" entre 0 et 3.
-- Chaque QRO : 2 à 4 critères d'évaluation courts (10 à 20 mots chacun) que le
-  correcteur utilisera pour noter la réponse d'un étudiant.
+{types_block}
+
+RÈGLES PAR TYPE :
+- QCM       : 1 seule bonne réponse. Champ "correct_index" obligatoire (entier 0-based).
+- QCM_MULTI : 2 ou 3 bonnes réponses parmi 4–5 choix. Champ "correct_indices" obligatoire (liste d'entiers). Pas de "correct_index".
+- QRO       : réponse ouverte. Champ "criteria" obligatoire (liste de 2 à 4 critères courts). Pas de "choices".
 
 FORMAT JSON ATTENDU :
 {{
   "questions": [
-    {{
-      "kind": "QCM",
-      "text": "...",
-      "choices": ["...", "...", "...", "..."],
-      "correct_index": 0
-    }},
-    {{
-      "kind": "QRO",
-      "text": "...",
-      "criteria": ["Doit citer X", "Doit expliquer Y"]
-    }}
+{examples_block}
   ]
 }}
 
@@ -296,7 +345,7 @@ def validate_generation_output(
             raise PromptValidationError(f"Question #{idx} n'est pas un objet.")
         kind = q.get("kind")
         text = (q.get("text") or "").strip()
-        if kind not in ("QCM", "QRO"):
+        if kind not in ("QCM", "QCM_MULTI", "QRO"):
             raise PromptValidationError(f"Question #{idx} : kind invalide ({kind!r}).")
         if not text:
             raise PromptValidationError(f"Question #{idx} : texte vide.")
@@ -319,8 +368,36 @@ def validate_generation_output(
                 "text": text,
                 "choices": [c.strip() for c in choices],
                 "correct_index": correct_index,
+                "correct_indices": [],
                 "criteria": [],
             })
+
+        elif kind == "QCM_MULTI":
+            choices = q.get("choices") or []
+            correct_indices = q.get("correct_indices") or []
+            if not isinstance(choices, list) or not (4 <= len(choices) <= 5):
+                raise PromptValidationError(
+                    f"QCM_MULTI #{idx} : 4 à 5 choix attendus, reçu {len(choices)}."
+                )
+            if any(not isinstance(c, str) or not c.strip() for c in choices):
+                raise PromptValidationError(f"QCM_MULTI #{idx} : choix vide ou non-string.")
+            if not isinstance(correct_indices, list) or not (2 <= len(correct_indices) <= 3):
+                raise PromptValidationError(
+                    f"QCM_MULTI #{idx} : 2 ou 3 indices corrects attendus, reçu {len(correct_indices)}."
+                )
+            if any(not isinstance(i, int) or not (0 <= i < len(choices)) for i in correct_indices):
+                raise PromptValidationError(
+                    f"QCM_MULTI #{idx} : correct_indices hors bornes ({correct_indices!r})."
+                )
+            normalized.append({
+                "kind": "QCM_MULTI",
+                "text": text,
+                "choices": [c.strip() for c in choices],
+                "correct_index": None,
+                "correct_indices": list(dict.fromkeys(correct_indices)),  # déduplique
+                "criteria": [],
+            })
+
         else:  # QRO
             criteria = q.get("criteria") or []
             if not isinstance(criteria, list) or not (2 <= len(criteria) <= 4):
@@ -334,6 +411,7 @@ def validate_generation_output(
                 "text": text,
                 "choices": [],
                 "correct_index": None,
+                "correct_indices": [],
                 "criteria": [c.strip() for c in criteria],
             })
 

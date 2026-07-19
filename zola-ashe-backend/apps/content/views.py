@@ -11,7 +11,7 @@ from rest_framework import serializers as drf_serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from rest_framework.permissions import IsAuthenticated
+from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
 
 from .models import Audio, Formation, LibraryPdf, LiveSession, Quiz, QuizResult, Resource
 from .serializers import (
@@ -37,6 +37,8 @@ from .services import (
 
 def _allowed_access_levels(user) -> list[str]:
     """Niveaux de contenu accessibles (PUBLIC/MEMBRE/FEMME/ENFANT) selon le profil."""
+    if not getattr(user, "is_authenticated", False):
+        return ["PUBLIC"]
     from apps.accounts.models import UserStatus
     if user.status == UserStatus.BLOQUE:
         return []
@@ -104,6 +106,7 @@ _QuizSubmitResponse = inline_serializer(
 class FormationViewSet(viewsets.ReadOnlyModelViewSet):
     """Catalogue des formations visibles (publiées ou programmées échues) + arbre détaillé."""
     pagination_class = None
+    permission_classes = [IsAuthenticatedOrReadOnly]
 
     def get_queryset(self):
         from django.db.models import Q
@@ -113,7 +116,15 @@ class FormationViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(category=category)
         if search := self.request.query_params.get("search"):
             qs = qs.filter(Q(title__icontains=search) | Q(description__icontains=search))
-        # Masquer les branches dont l'utilisateur n'a pas l'accès payant
+
+        if not getattr(user, "is_authenticated", False):
+            # Visiteurs non connectés : uniquement les formations marquées publiques
+            return qs.filter(is_public=True).distinct()
+
+        # Masquer les branches dont l'utilisateur n'a pas l'accès requis
+        from apps.accounts.models import UserStatus
+        if user.status != UserStatus.ACTIF:
+            qs = qs.exclude(branch="MEMBRE")
         if "FEMME" not in (user.access_levels or []):
             qs = qs.exclude(branch="FEMME")
         if "ENFANT" not in (user.access_levels or []):
@@ -131,7 +142,10 @@ class FormationViewSet(viewsets.ReadOnlyModelViewSet):
 
     def get_serializer_context(self):
         ctx = super().get_serializer_context()
-        ctx["accessible_sub_types"] = _accessible_sub_types(self.request.user)
+        user = self.request.user
+        ctx["accessible_sub_types"] = (
+            _accessible_sub_types(user) if getattr(user, "is_authenticated", False) else set()
+        )
         return ctx
 
 
