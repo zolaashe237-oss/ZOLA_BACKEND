@@ -17,4 +17,7 @@ urlpatterns = [
 
     # Profil — /api/me/
     path("me/", views.MeView.as_view(), name="me"),
+
+    # Configuration — /api/config/...
+    path("config/social-links/", views.SocialLinksView.as_view(), name="social-links"),
 ]

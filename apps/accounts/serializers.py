@@ -2,7 +2,17 @@
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
-from .models import User, UserStatus
+from .models import SocialLink, User, UserStatus
+
+
+class SocialLinkSerializer(serializers.ModelSerializer):
+    """Serializer des liens de réseaux sociaux (configuration singleton)."""
+
+    class Meta:
+        model = SocialLink
+        fields = ("facebook", "linkedin", "twitter", "instagram",
+                  "youtube", "tiktok", "whatsapp", "updated_at")
+        read_only_fields = ("updated_at",)
 
 
 class UserSerializer(serializers.ModelSerializer):

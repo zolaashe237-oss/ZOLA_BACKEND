@@ -6,7 +6,7 @@ from django.db.models import Sum
 from django.http import HttpResponse
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
-from drf_spectacular.utils import OpenApiResponse, extend_schema, inline_serializer
+from drf_spectacular.utils import OpenApiParameter, OpenApiResponse, extend_schema, inline_serializer
 from rest_framework import serializers as drf_serializers, status
 from rest_framework.response import Response
 from rest_framework.views import APIView
@@ -33,24 +33,69 @@ _DashboardResponse = inline_serializer(
         "reports_pending", "new_members_month", "modules_validated_month")})
 
 
-def _month_start():
-    return timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
+def _parse_date_params(request):
+    """Extrait et valide les paramètres ``date_from`` et ``date_to`` (format YYYY-MM-DD).
+
+    Retourne un tuple (date_from, date_to). Les valeurs par défaut couvrent
+    les 30 derniers jours si les paramètres sont absents.
+    """
+    from datetime import datetime
+
+    now = timezone.now()
+    default_from = now - timedelta(days=30)
+
+    date_from = default_from
+    date_to = now
+
+    raw_from = request.query_params.get("date_from")
+    raw_to = request.query_params.get("date_to")
+
+    if raw_from:
+        try:
+            date_from = datetime.strptime(raw_from, "%Y-%m-%d").replace(
+                tzinfo=timezone.utc if timezone.is_aware(now) else None,
+            )
+        except ValueError:
+            pass  # fallback à la valeur par défaut
+
+    if raw_to:
+        try:
+            date_to = datetime.strptime(raw_to, "%Y-%m-%d").replace(
+                tzinfo=timezone.utc if timezone.is_aware(now) else None,
+            )
+        except ValueError:
+            pass  # fallback à la valeur par défaut
+
+    return date_from, date_to
 
 
 @extend_schema(tags=[_TAG], summary="Tableau de bord (KPIs)",
-               description="Indicateurs temps réel : membres actifs/restreints, revenus du mois, "
-                           "cotisations en retard, signalements en attente, nouveaux membres, modules validés.",
+               description="Indicateurs : membres actifs/restreints, revenus, cotisations en retard, "
+                           "signalements, nouveaux membres, modules validés. Les compteurs basés sur "
+                           "une date (revenus, nouveaux membres, validations) sont filtrés par les "
+                           "paramètres optionnels ``date_from`` et ``date_to`` (format YYYY-MM-DD). "
+                           "Par défaut : 30 derniers jours.",
+               parameters=[
+                   OpenApiParameter("date_from", OpenApiTypes.DATE, OpenApiParameter.QUERY,
+                                    description="Début de période (YYYY-MM-DD)."),
+                   OpenApiParameter("date_to", OpenApiTypes.DATE, OpenApiParameter.QUERY,
+                                    description="Fin de période (YYYY-MM-DD)."),
+               ],
                responses={200: _DashboardResponse})
 class DashboardView(APIView):
-    """KPIs temps réel du back-office (CDC §5.2)."""
+    """KPIs temps réel du back-office (CDC §5.2), filtrables par période."""
     permission_classes = [IsAdmin]
 
-    def get(self, _request):
-        month_start = _month_start()
+    def get(self, request):
+        date_from, date_to = _parse_date_params(request)
         late_threshold = timezone.now() - timedelta(days=30)
 
         revenue = (
-            Payment.objects.filter(status=PaymentStatus.VALIDE, paid_at__gte=month_start)
+            Payment.objects.filter(
+                status=PaymentStatus.VALIDE,
+                paid_at__gte=date_from,
+                paid_at__lte=date_to,
+            )
             .aggregate(total=Sum("amount"))["total"] or 0
         )
         # Membres en retard : dernier paiement COTISATION VALIDE > 30 jours.
@@ -68,9 +113,12 @@ class DashboardView(APIView):
             "revenue_month": revenue,
             "cotisations_late": late,
             "reports_pending": Report.objects.filter(handled=False).count(),
-            "new_members_month": User.objects.filter(role=Role.MEMBER, created_at__gte=month_start).count(),
+            "new_members_month": User.objects.filter(
+                role=Role.MEMBER, created_at__gte=date_from, created_at__lte=date_to
+            ).count(),
             "modules_validated_month": QuizResult.objects.filter(
-                validated=True, validated_at__gte=month_start).count(),
+                validated=True, validated_at__gte=date_from, validated_at__lte=date_to
+            ).count(),
         })
 
 

@@ -17,7 +17,7 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from .models import User, UserStatus
+from .models import SocialLink, User, UserStatus
 from .serializers import (
     DeleteAccountSerializer,
     LoginSerializer,
@@ -26,6 +26,7 @@ from .serializers import (
     PasswordResetSerializer,
     RegisterSerializer,
     ResendOTPSerializer,
+    SocialLinkSerializer,
     UserSerializer,
     VerifyOTPSerializer,
 )
@@ -407,3 +408,40 @@ class MeView(generics.RetrieveUpdateDestroyAPIView):
         response = Response({"detail": "Votre compte a été supprimé."})
         _clear_refresh_cookie(response)
         return response
+
+
+# ─── Configuration : Liens sociaux ──────────────────────────────────────────
+
+@extend_schema(
+    tags=["Système"],
+    summary="Liens des réseaux sociaux",
+    description="Récupère les liens de réseaux sociaux configurés (public).",
+    responses={200: SocialLinkSerializer},
+)
+class SocialLinksView(APIView):
+    """GET public / PATCH admin — Configuration des liens de réseaux sociaux."""
+
+    permission_classes = [AllowAny]
+
+    def get(self, _request):
+        """Renvoie la configuration des liens sociaux (accès public)."""
+        config = SocialLink.get_singleton()
+        return Response(SocialLinkSerializer(config).data)
+
+    @extend_schema(
+        summary="Mettre à jour les liens sociaux",
+        description="Met à jour un ou plusieurs liens (réservé admin).",
+        request=SocialLinkSerializer,
+        responses={200: SocialLinkSerializer},
+    )
+    def patch(self, request):
+        """Met à jour les liens sociaux (réservé aux administrateurs)."""
+        from rest_framework.permissions import IsAdminUser
+        if not request.user.is_authenticated or not request.user.is_staff:
+            return Response({"detail": "Accès réservé à l'administration."},
+                            status=status.HTTP_403_FORBIDDEN)
+        config = SocialLink.get_singleton()
+        serializer = SocialLinkSerializer(config, data=request.data, partial=True)
+        serializer.is_valid(raise_exception=True)
+        serializer.save()
+        return Response(SocialLinkSerializer(config).data)

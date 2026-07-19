@@ -11,15 +11,17 @@ from rest_framework import serializers as drf_serializers, status, viewsets
 from rest_framework.decorators import action
 from rest_framework.response import Response
 
-from .models import Formation, Quiz, QuizResult, Resource
+from .models import Course, Formation, Quiz, QuizResult, Resource
 from .serializers import (
     FormationDetailSerializer,
     FormationListSerializer,
     QuizPublicSerializer,
     QuizResultSerializer,
     QuizSubmitSerializer,
+    serialize_course as _serialize_course,
 )
 from .services import (
+    course_state,
     course_unlocked,
     final_exam_unlocked,
     formation_accessible,
@@ -206,3 +208,28 @@ class QuizViewSet(viewsets.ReadOnlyModelViewSet):
         quiz = self.get_object()
         result = QuizResult.objects.filter(user=request.user, quiz=quiz).first()
         return Response(QuizResultSerializer(result).data if result else {})
+
+
+@extend_schema_view(
+    list=extend_schema(exclude=True),
+    retrieve=extend_schema(
+        tags=["Catalogue"], summary="Détail d'un cours (membre)",
+        description="Renvoie le détail d'un cours avec ses ressources et son QCM. Le middleware "
+                    "``SequentialCourseAccessMiddleware`` vérifie que le cours précédent est complété.",
+    ),
+)
+class CourseViewSet(viewsets.ReadOnlyModelViewSet):
+    """Cours côté membre : détail, ressources, accès séquentiel."""
+
+    queryset = Course.objects.select_related("module__formation").prefetch_related(
+        "resources",
+        "quiz__questions__choices",
+    )
+    serializer_class = FormationDetailSerializer  # placeholder, on serialise manuellement
+
+    def retrieve(self, request, *args, **kwargs):
+        course = self.get_object()
+        formation = course.module.formation
+        accessible = formation_accessible(request.user, formation)
+        data = _serialize_course(course, user=request.user, accessible=accessible)
+        return Response(data)

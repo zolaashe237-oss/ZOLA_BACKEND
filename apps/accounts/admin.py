@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
-from .models import EmailOTP, User, WhatsAppTemplate
+from .models import EmailOTP, SocialLink, User, WhatsAppTemplate
 
 
 @admin.register(User)
@@ -22,6 +22,19 @@ class UserAdmin(BaseUserAdmin):
     add_fieldsets = (
         (None, {"classes": ("wide",), "fields": ("email", "full_name", "password1", "password2", "role")}),
     )
+
+
+@admin.register(SocialLink)
+class SocialLinkAdmin(admin.ModelAdmin):
+    list_display = ("facebook", "youtube", "updated_at")
+    readonly_fields = ("updated_at",)
+
+    def has_add_permission(self, request):
+        """Interdire la création d'une deuxième instance (Singleton)."""
+        return not SocialLink.objects.exists()
+
+    def has_delete_permission(self, request, obj=None):
+        return False
 
 
 @admin.register(WhatsAppTemplate)

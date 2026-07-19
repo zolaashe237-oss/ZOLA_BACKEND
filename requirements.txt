@@ -28,6 +28,9 @@ requests>=2.32
 # --- WhatsApp (Twilio Cloud API) ---
 twilio>=9.4
 
+# --- YouTube Data API ---
+google-api-python-client>=2.100
+
 # --- Documentation API (OpenAPI 3 / Swagger UI / Redoc) ---
 drf-spectacular>=0.27
 

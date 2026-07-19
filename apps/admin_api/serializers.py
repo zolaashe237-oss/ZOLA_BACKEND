@@ -204,7 +204,7 @@ class AdminQuizSerializer(serializers.ModelSerializer):
     class Meta:
         model = Quiz
         fields = ("id", "course", "formation", "title", "pass_threshold", "active",
-                  "questions", "created_at")
+                  "library_pdf", "questions", "created_at")
         read_only_fields = ("id", "created_at")
 
     def validate(self, attrs):

@@ -91,8 +91,6 @@ def verify_otp(user: User, code: str) -> tuple[bool, str]:
     return True, "Code validé."
 
 
-# ─── Anti-brute-force connexion (Redis) ─────────────────────────────────────
-
 # ─── WhatsApp (Twilio Cloud API) ────────────────────────────────────────────
 
 def send_whatsapp_message(to_number: str, template_sid: str, variables: dict | None = None) -> str | None:
@@ -152,6 +150,8 @@ def send_whatsapp_message(to_number: str, template_sid: str, variables: dict | N
         )
         return None
 
+
+# ─── Anti-brute-force connexion (Redis) ─────────────────────────────────────
 
 def _attempts_key(identifier: str) -> str:
     return f"login_attempts:{identifier.lower()}"

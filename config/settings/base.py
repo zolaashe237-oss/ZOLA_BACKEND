@@ -61,6 +61,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "apps.content.middleware.SequentialCourseAccessMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -298,6 +299,9 @@ WEB_BASE_URL = env("WEB_BASE_URL", default="http://localhost:3000")
 # externe pour que les parcours restent complets en local (paiement simulé,
 # code OTP renvoyé dans la réponse). Jamais actif si une vraie clé est posée.
 SWINMO_MOCK = env.bool("SWINMO_MOCK", default=not SWINMO_SECRET_KEY)
+
+# --- YouTube Data API (import playlist, KF2) --------------------------------
+YOUTUBE_API_KEY = env("YOUTUBE_API_KEY", default="")
 
 # --- WhatsApp / Twilio ------------------------------------------------------
 # Twilio WhatsApp Cloud API — envois de notifications via templates Meta.

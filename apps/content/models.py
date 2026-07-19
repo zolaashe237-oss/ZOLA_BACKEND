@@ -46,7 +46,7 @@ class VideoSource(models.TextChoices):
 class Formation(models.Model):
     """Formation : unité du catalogue, organisée en modules et programmable."""
     title = models.CharField(max_length=200)
-    description = models.TextField(blank=True)
+    description = models.TextField(blank=True, null=True)
     category = models.CharField(max_length=10, choices=Category.choices, default=Category.FORMATION)
     # Accès : liste vide = PUBLIC (tout membre non bloqué) ; ["MEMBRE"] = RÉSERVÉ
     # (membre actif). Codes de billing.SubscriptionType (RG-22).
@@ -93,7 +93,7 @@ class Module(models.Model):
         "self", on_delete=models.CASCADE, null=True, blank=True, related_name="children",
     )
     title = models.CharField(max_length=200)
-    description = models.TextField(blank=True)
+    description = models.TextField(blank=True, null=True)
     order = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -111,7 +111,7 @@ class Course(models.Model):
     ressources et un QCM optionnel. Plusieurs cours par module, ordonnés."""
     module = models.ForeignKey(Module, on_delete=models.CASCADE, related_name="courses")
     title = models.CharField(max_length=200)
-    description = models.TextField(blank=True)
+    description = models.TextField(blank=True, null=True)
     order = models.PositiveIntegerField(default=0)
     created_at = models.DateTimeField(auto_now_add=True)
 
@@ -173,6 +173,11 @@ class Quiz(models.Model):
     title = models.CharField(max_length=200, default="QCM")
     pass_threshold = models.PositiveIntegerField(default=15)  # /20 (livret §4.4)
     active = models.BooleanField(default=True)
+    library_pdf = models.ForeignKey(
+        Resource, on_delete=models.SET_NULL, null=True, blank=True,
+        related_name="quiz_link",
+        help_text="Document PDF de bibliothèque associé au QCM",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:

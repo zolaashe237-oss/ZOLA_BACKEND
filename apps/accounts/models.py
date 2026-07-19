@@ -93,6 +93,37 @@ class WhatsAppTemplate(models.Model):
         return f"{self.name} ({self.content_sid})"
 
 
+class SocialLink(models.Model):
+    """Lien de réseau social — configuration dynamique pour le frontend.
+
+    Stocké en base pour modification sans déploiement. Modèle Singleton-like
+    (une seule ligne, accessible via ``SocialLink.get_singleton()``).
+    """
+
+    facebook = models.URLField(blank=True, default="", verbose_name="Facebook")
+    linkedin = models.URLField(blank=True, default="", verbose_name="LinkedIn")
+    twitter = models.URLField(blank=True, default="", verbose_name="Twitter / X")
+    instagram = models.URLField(blank=True, default="", verbose_name="Instagram")
+    youtube = models.URLField(blank=True, default="", verbose_name="YouTube")
+    tiktok = models.URLField(blank=True, default="", verbose_name="TikTok")
+    whatsapp = models.URLField(blank=True, default="", verbose_name="WhatsApp")
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "social_links"
+        verbose_name = "Liens sociaux"
+        verbose_name_plural = "Liens sociaux"
+
+    @classmethod
+    def get_singleton(cls):
+        """Récupère l'unique instance (la crée si elle n'existe pas)."""
+        obj, _ = cls.objects.get_or_create(pk=1)
+        return obj
+
+    def __str__(self):
+        return "Configuration des liens sociaux"
+
+
 class EmailOTP(models.Model):
     """Code OTP de vérification email — 6 chiffres, 15 min, 3 tentatives (CDC §3.3)."""
     user = models.ForeignKey(User, on_delete=models.CASCADE, related_name="otps")

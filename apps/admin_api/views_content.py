@@ -177,6 +177,56 @@ class AdminFormationViewSet(viewsets.ModelViewSet):
                target_id=formation.id, payload={"published": True})
         return Response(AdminFormationSerializer(formation).data)
 
+    @extend_schema(
+        tags=[_TAG], summary="Importer une playlist YouTube",
+        description=(
+            "Lance l'importation asynchrone d'une playlist YouTube. Une tâche Celery "
+            "est déclenchée et s'exécute en arrière-plan.\n\n"
+            "**Payload :**\n"
+            "- `playlist_id` *(requis)* — ID de la playlist YouTube.\n"
+            "- `formation_id` *(optionnel)* — ID d'une formation existante pour y "
+            "rattacher les vidéos importées. Si absent, une nouvelle formation est créée."
+        ),
+        request=inline_serializer(
+            name="YouTubeImportRequest",
+            fields={
+                "playlist_id": drf_serializers.CharField(),
+                "formation_id": drf_serializers.IntegerField(required=False),
+            },
+        ),
+        responses={202: inline_serializer(
+            name="YouTubeImportResponse",
+            fields={"task_id": drf_serializers.CharField(),
+                    "detail": drf_serializers.CharField()},
+        )},
+    )
+    @action(detail=False, methods=["post"], url_path="import-youtube")
+    def import_youtube(self, request):
+        """Déclenche l'import d'une playlist YouTube en tâche Celery."""
+        from apps.content.tasks import import_youtube_playlist
+
+        serializer = inline_serializer(
+            name="_YouTubeImportPayload",
+            fields={
+                "playlist_id": drf_serializers.CharField(),
+                "formation_id": drf_serializers.IntegerField(required=False),
+            },
+        )(data=request.data)
+        serializer.is_valid(raise_exception=True)
+
+        playlist_id = serializer.validated_data["playlist_id"]
+        formation_id = serializer.validated_data.get("formation_id")
+
+        task = import_youtube_playlist.delay(playlist_id, formation_id)
+        record(request.user, AuditAction.UPDATE_CONTENT, target_type="Formation",
+               reason=f"YouTube import déclenché : playlist={playlist_id}",
+               payload={"playlist_id": playlist_id, "task_id": task.id})
+
+        return Response(
+            {"task_id": task.id, "detail": "Import lancé en arrière-plan."},
+            status=status.HTTP_202_ACCEPTED,
+        )
+
 
 # ─── Documentation détaillée du CRUD Modules (arbre) ─────────────────────────
 _MODULE_FIELDS_DOC = (
