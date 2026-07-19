@@ -93,6 +93,66 @@ def verify_otp(user: User, code: str) -> tuple[bool, str]:
 
 # ─── Anti-brute-force connexion (Redis) ─────────────────────────────────────
 
+# ─── WhatsApp (Twilio Cloud API) ────────────────────────────────────────────
+
+def send_whatsapp_message(to_number: str, template_sid: str, variables: dict | None = None) -> str | None:
+    """Envoie un message WhatsApp via Twilio (Content API / template).
+
+    Si ``TWILIO_MOCK`` est vrai (aucune clé configurée), le message est
+    simplement loggé et la fonction renvoie ``"mock"``.
+
+    Args:
+        to_number: Numéro du destinataire au format E.164 (ex. ``+2376XXXXXXXX``).
+        template_sid: Content SID du template Meta (ex. ``HXb5b32575a...``).
+        variables: Dictionnaire des variables du template, p.ex. ``{"1": "123456", "2": "Jean"}``.
+
+    Returns:
+        Le SID Twilio du message créé, ``"mock"`` en mode mock, ou ``None`` en cas d'erreur.
+    """
+    from twilio.rest import Client
+    from twilio.base.exceptions import TwilioRestException
+
+    account_sid = settings.TWILIO_ACCOUNT_SID
+    auth_token = settings.TWILIO_AUTH_TOKEN
+    from_number = settings.TWILIO_WHATSAPP_NUMBER
+
+    if not account_sid or not auth_token or not from_number:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.warning(
+            "Twilio non configuré — message WhatsApp non envoyé à %s "
+            "(template %s, vars=%s)", to_number, template_sid, variables
+        )
+        return None
+
+    # Format E.164 obligatoire — s'assurer que whatsapp: est préfixé.
+    def _fmt(n: str) -> str:
+        return f"whatsapp:{n}" if not n.startswith("whatsapp:") else n
+
+    content_variables = {}
+    if variables:
+        import json
+        content_variables = json.dumps(variables)
+
+    try:
+        client = Client(account_sid, auth_token)
+        message = client.messages.create(
+            to=_fmt(to_number),
+            from_=_fmt(from_number),
+            content_sid=template_sid,
+            content_variables=content_variables,
+        )
+        return message.sid
+    except TwilioRestException as exc:
+        import logging
+        logger = logging.getLogger(__name__)
+        logger.error(
+            "Twilio API error [%s] — %s | to=%s template=%s",
+            exc.status, exc.msg, to_number, template_sid,
+        )
+        return None
+
+
 def _attempts_key(identifier: str) -> str:
     return f"login_attempts:{identifier.lower()}"
 

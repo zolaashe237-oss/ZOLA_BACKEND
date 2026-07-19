@@ -299,6 +299,17 @@ WEB_BASE_URL = env("WEB_BASE_URL", default="http://localhost:3000")
 # code OTP renvoyé dans la réponse). Jamais actif si une vraie clé est posée.
 SWINMO_MOCK = env.bool("SWINMO_MOCK", default=not SWINMO_SECRET_KEY)
 
+# --- WhatsApp / Twilio ------------------------------------------------------
+# Twilio WhatsApp Cloud API — envois de notifications via templates Meta.
+# https://www.twilio.com/docs/whatsapp/api
+TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default="")
+TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default="")
+TWILIO_WHATSAPP_NUMBER = env("TWILIO_WHATSAPP_NUMBER", default="")
+
+# Mode MOCK WhatsApp : aucune vraie clé → les messages sont loggés en console.
+# Désactivé dès qu'un Account SID valide est fourni.
+TWILIO_MOCK = env.bool("TWILIO_MOCK", default=not TWILIO_ACCOUNT_SID)
+
 # --- Internationalisation ---------------------------------------------------
 LANGUAGE_CODE = "fr-fr"
 TIME_ZONE = "UTC"               # cron à 00h00 UTC (CDC)

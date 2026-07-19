@@ -1,8 +1,34 @@
-"""Tâches asynchrones de l'app accounts — envois d'emails via Brevo (CDC §3.3)."""
+"""Tâches asynchrones de l'app accounts — envois d'emails (Brevo) et WhatsApp (Twilio)."""
+import logging
+
 from django.conf import settings
 from django.core.mail import send_mail
 
 from config.celery import app
+
+logger = logging.getLogger(__name__)
+
+
+@app.task(bind=True, max_retries=3, default_retry_delay=60)
+def send_whatsapp_message(self, to_number: str, template_name: str, variables: dict | None = None):
+    """Envoie un message WhatsApp via Twilio (asynchrone, avec retry automatique).
+
+    Recherche le template en base par son nom logique, puis appelle le service.
+    En cas d'échec de l'API Twilio, la tâche est réessayée 3 fois à 60s d'intervalle.
+    """
+    from .models import WhatsAppTemplate
+    from .services import send_whatsapp_message as _send
+
+    try:
+        tmpl = WhatsAppTemplate.objects.get(name=template_name, is_active=True)
+    except WhatsAppTemplate.DoesNotExist:
+        logger.error("WhatsApp template '%s' introuvable ou inactif.", template_name)
+        return f"template '{template_name}' not found"
+
+    sid = _send(to_number, tmpl.content_sid, variables)
+    if sid is None:
+        raise self.retry(exc=Exception(f"Twilio send failed for {template_name} → {to_number}"))
+    return f"whatsapp sent: {sid}"
 
 
 @app.task

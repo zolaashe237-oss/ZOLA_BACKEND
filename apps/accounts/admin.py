@@ -1,7 +1,7 @@
 from django.contrib import admin
 from django.contrib.auth.admin import UserAdmin as BaseUserAdmin
 
-from .models import EmailOTP, User
+from .models import EmailOTP, User, WhatsAppTemplate
 
 
 @admin.register(User)
@@ -22,6 +22,14 @@ class UserAdmin(BaseUserAdmin):
     add_fieldsets = (
         (None, {"classes": ("wide",), "fields": ("email", "full_name", "password1", "password2", "role")}),
     )
+
+
+@admin.register(WhatsAppTemplate)
+class WhatsAppTemplateAdmin(admin.ModelAdmin):
+    list_display = ("name", "content_sid", "locale", "is_active", "updated_at")
+    list_filter = ("is_active", "locale")
+    search_fields = ("name", "content_sid")
+    readonly_fields = ("created_at", "updated_at")
 
 
 @admin.register(EmailOTP)
