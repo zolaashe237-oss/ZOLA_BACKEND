@@ -140,13 +140,13 @@ class FinanceTests(AdminBase):
         # Filter matching today
         r = self.client.get(f"/api/admin/exports/members.csv?date_from={date.today()}")
         self.assertEqual(r.status_code, 200)
-        self.assertIn(self.member.email, r.content.decode("utf-8"))
+        self.assertIn(self.member.email, b"".join(r.streaming_content).decode("utf-8"))
         
         # Filter excluding today
         tomorrow = date.today() + timezone.timedelta(days=1)
         r = self.client.get(f"/api/admin/exports/members.csv?date_from={tomorrow}")
         self.assertEqual(r.status_code, 200)
-        self.assertNotIn(self.member.email, r.content.decode("utf-8"))
+        self.assertNotIn(self.member.email, b"".join(r.streaming_content).decode("utf-8"))
 
     def test_export_payments_csv_filters(self):
         # Create a payment
@@ -160,13 +160,13 @@ class FinanceTests(AdminBase):
         # Filter matching today
         r = self.client.get(f"/api/admin/exports/payments.csv?date_from={date.today()}")
         self.assertEqual(r.status_code, 200)
-        self.assertIn(self.member.email, r.content.decode("utf-8"))
+        self.assertIn(self.member.email, b"".join(r.streaming_content).decode("utf-8"))
         
         # Filter excluding today
         tomorrow = date.today() + timezone.timedelta(days=1)
         r = self.client.get(f"/api/admin/exports/payments.csv?date_from={tomorrow}")
         self.assertEqual(r.status_code, 200)
-        self.assertNotIn(self.member.email, r.content.decode("utf-8"))
+        self.assertNotIn(self.member.email, b"".join(r.streaming_content).decode("utf-8"))
 
     def test_monthly_revenue(self):
         Payment.objects.create(

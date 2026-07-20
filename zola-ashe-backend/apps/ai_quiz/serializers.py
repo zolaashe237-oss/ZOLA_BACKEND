@@ -42,6 +42,10 @@ class GenerationRequestSerializer(serializers.Serializer):
             raise serializers.ValidationError(
                 {"source_ref": "URL YouTube requise pour ce source_type."}
             )
+        if src_type == SourceType.MULTI_YOUTUBE and not src_ref:
+            raise serializers.ValidationError(
+                {"source_ref": "Liste d'URLs YouTube (séparées par des virgules) requise pour MULTI_YOUTUBE."}
+            )
         if src_type == SourceType.PDF and not src_ref:
             raise serializers.ValidationError(
                 {"source_ref": "resource_id du PDF requis pour ce source_type."}
@@ -70,7 +74,7 @@ class AIQuestionSerializer(serializers.ModelSerializer):
         model = AIQuestion
         fields = (
             "id", "kind", "text", "order", "choices", "correct_index",
-            "criteria", "is_published", "edited_by_admin",
+            "correct_indices", "criteria", "is_published", "edited_by_admin",
             "created_at", "updated_at",
         )
         read_only_fields = fields

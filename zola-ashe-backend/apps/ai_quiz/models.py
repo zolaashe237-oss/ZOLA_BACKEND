@@ -28,11 +28,13 @@ class SourceType(models.TextChoices):
     VIDEO_YOUTUBE = "VIDEO_YOUTUBE", "Vidéo YouTube (captions)"
     PDF = "PDF", "Document PDF"
     MANUAL_TEXT = "MANUAL_TEXT", "Texte saisi manuellement"
+    MULTI_YOUTUBE = "MULTI_YOUTUBE", "Plusieurs vidéos YouTube (examen final)"
 
 
 class QuestionKind(models.TextChoices):
-    QCM = "QCM", "Question à choix multiple"
-    QRO = "QRO", "Question à réponse ouverte"
+    QCM       = "QCM",       "Question à choix multiple (1 bonne réponse)"
+    QCM_MULTI = "QCM_MULTI", "Question à choix multiples (plusieurs bonnes réponses)"
+    QRO       = "QRO",       "Question à réponse ouverte"
 
 
 class DifficultyLevel(models.TextChoices):
@@ -125,7 +127,7 @@ class AIQuestion(models.Model):
     job = models.ForeignKey(
         AIQuizJob, on_delete=models.CASCADE, related_name="questions"
     )
-    kind = models.CharField(max_length=8, choices=QuestionKind.choices)
+    kind = models.CharField(max_length=16, choices=QuestionKind.choices)
     text = models.TextField()
     order = models.PositiveIntegerField(default=0)
 
@@ -133,9 +135,17 @@ class AIQuestion(models.Model):
     choices = models.JSONField(
         default=list,
         blank=True,
-        help_text='Pour QCM: liste de 4 strings. Vide pour QRO.',
+        help_text='Pour QCM/QCM_MULTI: liste de 4–5 strings. Vide pour QRO.',
     )
-    correct_index = models.PositiveSmallIntegerField(null=True, blank=True)
+    correct_index = models.PositiveSmallIntegerField(
+        null=True, blank=True,
+        help_text='Pour QCM: index de la bonne réponse. Null pour QCM_MULTI et QRO.',
+    )
+    correct_indices = models.JSONField(
+        default=list,
+        blank=True,
+        help_text='Pour QCM_MULTI: liste des indices corrects (ex: [0, 2]). Vide pour QCM/QRO.',
+    )
 
     # QRO : critères d'évaluation utilisés par le pipeline de correction.
     criteria = models.JSONField(
