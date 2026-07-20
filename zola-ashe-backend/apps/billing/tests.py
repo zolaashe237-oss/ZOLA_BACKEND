@@ -95,10 +95,13 @@ class WebhookTests(APITestCase):
         self.assertEqual(Payment.objects.get(swinmo_ref="ref1").status, PaymentStatus.ECHOUE)
 
     def test_order_paid_email_fallback_without_metadata(self):
+        """Sécurité renforcée (Albert df8ae92) : sans metadata reference et si
+        l'API Swinmo ne renvoie pas de résolution, on refuse l'activation
+        automatique par simple correspondance d'email (fraude possible)."""
         from django.conf import settings
         # On crée un paiement en attente
         payment = make_pending(self.user, ref="original_ref")
-        
+
         # Payload sans metadata, mais avec email et productId
         payload = {
             "event": "order.paid",
@@ -112,16 +115,14 @@ class WebhookTests(APITestCase):
                 "status": "PAID"
             }
         }
-        
+
         r = self._post(payload)
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.data["outcome"], "activated")
-        
-        # Vérifie que le paiement a été validé
+        # L'API Swinmo (SWINMO_SECRET_KEY test) renvoie 401 → pas de résolution
+        # possible → outcome=unknown-payment, paiement inchangé.
+        self.assertEqual(r.data["outcome"], "unknown-payment")
         payment.refresh_from_db()
-        self.assertEqual(payment.status, PaymentStatus.VALIDE)
-        # Et que la référence Swinmo de l'ordre a été enregistrée
-        self.assertEqual(payment.swinmo_ref, "swinmo_order_id_123")
+        self.assertEqual(payment.status, PaymentStatus.EN_ATTENTE)
 
     @patch("apps.billing.swinmo.get_order_details")
     def test_order_paid_resolves_via_api_if_metadata_missing(self, mock_get_details):
@@ -222,7 +223,8 @@ class InitiateTests(APITestCase):
             result = initiate_payment(user, "INSCRIPTION")
         mock.assert_called_once()
         self.assertEqual(result["checkout_url"], "https://swinmo/pay/abc")
-        self.assertEqual(result["amount"], 10000)
+        # Tarif INSCRIPTION seedé en DB via billing.0006_seed_default_plans (47 500 FCFA)
+        self.assertEqual(result["amount"], 47500)
         payment = Payment.objects.get(id=result["payment_id"])
         self.assertEqual(payment.status, PaymentStatus.EN_ATTENTE)
         self.assertEqual(payment.swinmo_ref, result["reference"])
