@@ -182,6 +182,24 @@ class ResourceViewSet(viewsets.ReadOnlyModelViewSet):
         if not course_unlocked(request.user, course):
             return Response({"detail": "Cours verrouillé.", "lock_reason": "quiz"},
                             status=status.HTTP_403_FORBIDDEN)
+
+        # Strict sequential checking
+        # unlocked_progress = highest order of completed courses in the same module + 1
+        module_courses = list(course.module.courses.order_by("order"))
+        completed_orders = [c.order for c in module_courses if course_completed(request.user, c)]
+        if not completed_orders:
+            # If no course completed, unlocked progress is the order of the first course in the module
+            unlocked_progress = module_courses[0].order if module_courses else 0
+        else:
+            # The next available course order after the highest completed one
+            highest_completed = max(completed_orders)
+            pending = [c.order for c in module_courses if c.order > highest_completed]
+            unlocked_progress = pending[0] if pending else highest_completed
+
+        if course.order > unlocked_progress:
+            return Response({"detail": "Ordre de cours non autorisé.", "lock_reason": "sequential"},
+                            status=status.HTTP_403_FORBIDDEN)
+
         if resource.is_youtube:
             return Response({"kind": "youtube", "url": resource.youtube_url})
         if not resource.bucket_key:

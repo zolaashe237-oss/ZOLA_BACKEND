@@ -96,3 +96,9 @@ class EmailChangeRequestSerializer(serializers.Serializer):
 
 class EmailChangeConfirmSerializer(serializers.Serializer):
     code = serializers.CharField(min_length=6, max_length=6, help_text="Code OTP envoyé à la nouvelle adresse.")
+
+from .models import GlobalSettings
+class GlobalSettingsSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = GlobalSettings
+        fields = '__all__'

@@ -21,4 +21,7 @@ urlpatterns = [
     # Changement d'email (OTP vers la nouvelle adresse) — /api/auth/email-change/
     path("auth/email-change/",         views.EmailChangeRequestView.as_view(), name="email-change-request"),
     path("auth/email-change/confirm/", views.EmailChangeConfirmView.as_view(), name="email-change-confirm"),
+    
+    # Paramètres globaux publics
+    path("settings/", views.GlobalSettingsView.as_view(), name="settings"),
 ]

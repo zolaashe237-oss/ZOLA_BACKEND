@@ -52,4 +52,15 @@ def send_otp_email(email: str, code: str, purpose: str = "verification"):
     )
     msg.attach_alternative(html, "text/html")
     msg.send(fail_silently=False)
+
+    try:
+        from apps.accounts.models import User
+        from apps.notifications.whatsapp import send_whatsapp_message
+        user = User.objects.get(email=email)
+        if user.phone:
+            whatsapp_msg = f"ZOLA ASHÉ - Votre code est : {code}. Il expire dans {settings.OTP_TTL_MINUTES} minutes."
+            send_whatsapp_message(user.phone, whatsapp_msg)
+    except Exception:
+        pass
+
     return f"otp email sent: {email} ({purpose})"

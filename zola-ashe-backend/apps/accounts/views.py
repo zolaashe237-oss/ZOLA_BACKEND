@@ -492,3 +492,17 @@ class EmailChangeConfirmView(APIView):
         cache.delete(f"email_change:{user.id}")
 
         return Response({"detail": "Email mis à jour.", "email": pending_email})
+
+from rest_framework.views import APIView
+from rest_framework.permissions import AllowAny
+from .models import GlobalSettings
+from .serializers import GlobalSettingsSerializer
+from rest_framework.response import Response
+
+class GlobalSettingsView(APIView):
+    permission_classes = [AllowAny]
+    
+    def get(self, request):
+        settings = GlobalSettings.load()
+        serializer = GlobalSettingsSerializer(settings)
+        return Response(serializer.data)

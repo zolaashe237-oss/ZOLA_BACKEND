@@ -62,3 +62,26 @@ def monthly_financial_report():
 @app.task
 def ping():
     return "pong"
+
+@app.task
+def send_block_notification(user_id: int, reason: str):
+    """Envoie une notification de blocage par email et WhatsApp."""
+    from django.conf import settings
+    from django.core.mail import send_mail
+    from apps.accounts.models import User
+    from apps.notifications.whatsapp import send_whatsapp_message
+
+    user = User.objects.filter(id=user_id).first()
+    if not user:
+        return "User not found"
+        
+    subject = "ZOLA ASHÉ - Votre compte a été bloqué"
+    message = f"Bonjour {user.full_name},\n\nVotre compte a été bloqué pour la raison suivante : {reason}.\n\nVeuillez nous contacter pour plus d'informations."
+    
+    send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email], fail_silently=True)
+    
+    if user.phone:
+        whatsapp_msg = f"ZOLA ASHÉ - Votre compte a été bloqué. Motif: {reason}"
+        send_whatsapp_message(user.phone, whatsapp_msg)
+        
+    return f"Block notification sent to {user.email}"
