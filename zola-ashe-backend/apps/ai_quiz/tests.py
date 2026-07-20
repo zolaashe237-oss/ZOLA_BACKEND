@@ -366,13 +366,13 @@ class ComputeRankTest(TestCase):
         from .tasks import _compute_rank
 
         formation = Formation.objects.create(
-            title="F", slug="f", branch=Branche.GENERALE,
+            title="F", slug="f", branch=Branche.MEMBRE,
         )
         mod = Module.objects.create(formation=formation, title="new")
 
         # 2 pairs déjà DONE avec des niveaux mixtes.
         f2 = Formation.objects.create(
-            title="F2", slug="f2", branch=Branche.GENERALE,
+            title="F2", slug="f2", branch=Branche.MEMBRE,
         )
         m2 = Module.objects.create(formation=f2, title="peer easy")
         m3 = Module.objects.create(formation=f2, title="peer hard")
@@ -390,11 +390,11 @@ class ComputeRankTest(TestCase):
             status=JobStatus.IN_PROGRESS,
         )
         # FACILE → 1 pair de niveau ≤ (l'autre FACILE) + 1 = 2.
-        rank_facile = _compute_rank(job, "GENERALE", "FACILE")
+        rank_facile = _compute_rank(job, "MEMBRE", "FACILE")
         # INTERMEDIAIRE → 1 pair de niveau ≤ (FACILE) + 1 = 2.
-        rank_inter = _compute_rank(job, "GENERALE", "INTERMEDIAIRE")
+        rank_inter = _compute_rank(job, "MEMBRE", "INTERMEDIAIRE")
         # DIFFICILE → 2 pairs de niveau ≤ (les deux) + 1 = 3.
-        rank_hard = _compute_rank(job, "GENERALE", "DIFFICILE")
+        rank_hard = _compute_rank(job, "MEMBRE", "DIFFICILE")
         self.assertEqual(rank_facile, 2)
         self.assertEqual(rank_inter, 2)
         self.assertEqual(rank_hard, 3)

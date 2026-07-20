@@ -239,17 +239,25 @@ class SendRemindersView(APIView):
 
     def post(self, request):
         from apps.billing.tasks import send_payment_reminder
+        user_id = request.data.get("user_id")
         late_threshold = timezone.now() - timedelta(days=30)
         targets = []
-        for user in User.objects.filter(role=Role.MEMBER, status=UserStatus.ACTIF):
+
+        qs = User.objects.filter(role=Role.MEMBER, status=UserStatus.ACTIF)
+        if user_id:
+            qs = qs.filter(pk=user_id)
+
+        for user in qs:
             last = (Payment.objects.filter(user=user, type=PaymentType.COTISATION,
                                            status=PaymentStatus.VALIDE)
                     .order_by("-paid_at").first())
             if last is None or last.paid_at < late_threshold:
                 send_payment_reminder.delay(user.id)
                 targets.append(user.id)
-        record(request.user, AuditAction.SEND_REMINDER, reason="Relance groupée cotisations",
-               payload={"count": len(targets)})
+
+        record(request.user, AuditAction.SEND_REMINDER,
+               reason="Relance individuelle" if user_id else "Relance groupée cotisations",
+               payload={"count": len(targets), "user_id": user_id})
         return Response({"reminded": len(targets)})
 
 

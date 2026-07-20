@@ -64,14 +64,22 @@ def generate_quiz_task(self, job_id: str) -> str:
 
         # 2) Construction du prompt
         config: dict[str, Any] = job.config or {}
+        # Pour MULTI_YOUTUBE (examen final), le titre contextuel provient du config
+        if job.source_type == SourceType.MULTI_YOUTUBE:
+            ctx_title = config.get("formation_title") or job.module.formation.title
+            ctx_desc  = f"Examen final couvrant l'ensemble de la formation."
+        else:
+            ctx_title = job.module.title
+            ctx_desc  = getattr(job.module, "description", "") or ""
         prompt = build_generation_prompt(
             source_text=text,
-            module_title=job.module.title,
-            module_description=getattr(job.module, "description", "") or "",
+            module_title=ctx_title,
+            module_description=ctx_desc,
             branch=_infer_branch(job.module),
             difficulty=config.get("difficulty", DifficultyLevel.INTERMEDIAIRE),
             nb_questions=int(config.get("nb_questions", 5)),
             ratio_qcm_qro=float(config.get("ratio_qcm_qro", 0.6)),
+            nb_qcm_multi=int(config.get("nb_qcm_multi", 0)),
         )
 
         # 3) Appel Gemini JSON mode strict (retry × N géré dans le client)
@@ -133,19 +141,38 @@ def _resolve_source_text(job) -> str:
         return extract_youtube_transcript(job.source_ref)
     if job.source_type == SourceType.PDF:
         return extract_pdf_text(int(job.source_ref))
+    if job.source_type == SourceType.MULTI_YOUTUBE:
+        urls = [u.strip() for u in (job.source_ref or "").split(",") if u.strip()]
+        if not urls:
+            raise RuntimeError("MULTI_YOUTUBE sans source_ref.")
+        texts, errors = [], []
+        for url in urls:
+            try:
+                texts.append(extract_youtube_transcript(url))
+            except Exception as exc:
+                errors.append(str(exc))
+        if not texts:
+            raise RuntimeError(
+                f"Aucune transcription disponible pour l'examen final ({len(errors)} vidéos échouées)."
+            )
+        logger.info(
+            "multi_youtube: %d/%d transcriptions récupérées (job=%s)",
+            len(texts), len(urls), job.id,
+        )
+        return "\n\n--- CHAPITRE SUIVANT ---\n\n".join(texts)
     raise RuntimeError(f"source_type inconnu : {job.source_type}")
 
 
 def _infer_branch(module) -> str:
     """Remonte au Formation pour lire la branche (le Module n'a pas de branche propre)."""
     try:
-        return module.formation.branch or "GENERALE"
+        return module.formation.branch or "MEMBRE"
     except Exception:
-        return "GENERALE"
+        return "MEMBRE"
 
 
 def _persist_questions(job, normalized: list[dict]) -> None:
-    from .models import AIQuestion, QuestionKind
+    from .models import AIQuestion
 
     AIQuestion.objects.filter(job=job).delete()  # au cas où retry
     to_create = [
@@ -155,7 +182,8 @@ def _persist_questions(job, normalized: list[dict]) -> None:
             text=q["text"],
             order=idx,
             choices=q.get("choices") or [],
-            correct_index=q.get("correct_index"),
+            correct_index=q.get("correct_index"),           # None pour QCM_MULTI et QRO
+            correct_indices=q.get("correct_indices") or [], # rempli pour QCM_MULTI
             criteria=q.get("criteria") or [],
         )
         for idx, q in enumerate(normalized)

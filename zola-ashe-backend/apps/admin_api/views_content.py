@@ -43,7 +43,7 @@ from apps.audit.models import AuditAction
 from apps.audit.services import record
 from apps.community.models import Post
 from apps.content.models import Audio, Course, Formation, FormationStatus, LibraryPdf, Module, Quiz, QuizResult, Resource
-from apps.content.services import generate_signed_url, record_quiz_result
+from apps.content.services import fetch_youtube_transcript, generate_signed_url, record_quiz_result
 
 from .permissions import IsAdmin
 from .serializers import (
@@ -60,6 +60,13 @@ from .serializers import (
     UploadSerializer,
     AdminQuizResultSerializer,
 )
+
+def _auto_fetch_transcript(resource: Resource) -> None:
+    """Récupère et stocke la transcription YouTube d'une ressource. Silencieux en cas d'échec."""
+    text = fetch_youtube_transcript(resource.youtube_url)
+    if text:
+        Resource.objects.filter(pk=resource.pk).update(transcript_text=text)
+
 
 # Limites d'upload (§5.4) : PDF 50 Mo, audio 100 Mo, vidéo 500 Mo, miniature 5 Mo.
 _MAX_SIZE = {"PDF": 50 * 1024 * 1024, "AUDIO": 100 * 1024 * 1024,
@@ -411,11 +418,16 @@ class AdminResourceViewSet(viewsets.ModelViewSet):
 
     def perform_create(self, serializer):
         resource = serializer.save()
+        if resource.is_youtube and resource.youtube_url:
+            _auto_fetch_transcript(resource)
         record(self.request.user, AuditAction.UPDATE_CONTENT, target_type="Resource",
                target_id=resource.id, payload={"created": True, "course_id": resource.course_id})
 
     def perform_update(self, serializer):
+        prev_url = serializer.instance.youtube_url
         resource = serializer.save()
+        if resource.is_youtube and resource.youtube_url and resource.youtube_url != prev_url:
+            _auto_fetch_transcript(resource)
         record(self.request.user, AuditAction.UPDATE_CONTENT, target_type="Resource",
                target_id=resource.id)
 
@@ -689,3 +701,95 @@ class AdminQuizResultListView(APIView):
             
         serializer = AdminQuizResultSerializer(qs, many=True)
         return Response(serializer.data)
+
+
+# ── Import YouTube ─────────────────────────────────────────────────────────────
+
+class YoutubeImportView(APIView):
+    """
+    POST /api/admin/formations/import-youtube/
+
+    Corps :
+        { "playlist_url": "https://youtube.com/playlist?list=...", "mode": "preview" | "confirm" }
+
+    • mode=preview  → analyse la playlist via YouTube Data API, renvoie la structure sans écrire en base
+    • mode=confirm  → re-fetch + crée Formation / Module / Course / Resource en base
+    """
+
+    permission_classes = [IsAdmin]
+
+    @extend_schema(
+        tags=[_TAG],
+        summary="Importer une formation depuis une playlist YouTube",
+        request=inline_serializer(
+            name="YoutubeImportRequest",
+            fields={
+                "playlist_url": drf_serializers.URLField(),
+                "mode": drf_serializers.ChoiceField(choices=["preview", "confirm"]),
+            },
+        ),
+        responses={
+            200: OpenApiResponse(description="Preview ou résultat de l'import"),
+            400: OpenApiResponse(description="URL invalide ou mode inconnu"),
+            503: OpenApiResponse(description="YouTube API indisponible / clé manquante"),
+        },
+    )
+    def post(self, request):
+        from . import youtube_import as yt_service
+
+        playlist_url = (request.data.get("playlist_url") or "").strip()
+        mode         = (request.data.get("mode") or "").strip()
+
+        if not playlist_url:
+            return Response(
+                {"detail": "Le champ `playlist_url` est requis."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if not yt_service.extract_playlist_id(playlist_url):
+            return Response(
+                {"detail": "URL invalide — le paramètre `list=` est introuvable."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+        if mode not in ("preview", "confirm"):
+            return Response(
+                {"detail": "Le champ `mode` doit valoir 'preview' ou 'confirm'."},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        import_mode = (request.data.get("import_mode") or "formation").strip()
+
+        try:
+            if mode == "preview":
+                data = yt_service.preview_playlist(playlist_url)
+            elif import_mode == "chapter":
+                formation_id = request.data.get("formation_id")
+                if not formation_id:
+                    return Response(
+                        {"detail": "Le champ `formation_id` est requis pour import_mode=chapter."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                try:
+                    from apps.content.models import Formation
+                    Formation.objects.get(pk=int(formation_id))
+                except (ValueError, Formation.DoesNotExist):
+                    return Response(
+                        {"detail": f"Formation {formation_id} introuvable."},
+                        status=status.HTTP_400_BAD_REQUEST,
+                    )
+                data = yt_service.import_playlist_as_chapter(playlist_url, int(formation_id))
+            else:
+                data = yt_service.import_playlist(playlist_url)
+            return Response(data)
+
+        except ValueError as exc:
+            return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
+        except Exception as exc:
+            import logging
+            logging.getLogger("admin_api.youtube").exception(
+                "Erreur import YouTube url=%s mode=%s import_mode=%s",
+                playlist_url, mode, import_mode,
+            )
+            return Response(
+                {"detail": f"Service YouTube indisponible : {exc}"},
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
