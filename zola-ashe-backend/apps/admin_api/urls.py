@@ -11,6 +11,7 @@ from . import views_memoir as vmem
 from . import views_moderation as vmod
 from . import views_progression as vp
 from . import views_community as vcom
+from . import views_settings as vset
 
 router = DefaultRouter()
 router.register("members", vm.MemberViewSet, basename="admin-member")
@@ -70,6 +71,9 @@ urlpatterns = [
     path("progression/stats/", vp.FormationProgressStatView.as_view(), name="admin-progression-stats"),
     path("progression/members/", vp.MemberProgressListView.as_view(), name="admin-progression-members"),
     path("progression/reset/", vp.ResetProgressView.as_view(), name="admin-progression-reset"),
+
+    # Paramètres globaux
+    path("settings/", vset.AdminGlobalSettingsView.as_view(), name="admin-settings"),
 
     *router.urls,
 ]

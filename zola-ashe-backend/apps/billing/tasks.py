@@ -52,6 +52,17 @@ def send_confirmation_email(email: str, kind: str,
     )
     msg.attach_alternative(html, "text/html")
     msg.send(fail_silently=False)
+
+    try:
+        from apps.accounts.models import User
+        from apps.notifications.whatsapp import send_whatsapp_message
+        user = User.objects.get(email=email)
+        if user.phone:
+            whatsapp_msg = f"ZOLA ASHÉ - Nous confirmons {libelle}. Merci de votre confiance."
+            send_whatsapp_message(user.phone, whatsapp_msg)
+    except Exception:
+        pass
+
     return f"confirmation sent: {email} ({kind})"
 
 

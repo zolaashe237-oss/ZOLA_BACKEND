@@ -84,3 +84,26 @@ class EmailOTP(models.Model):
 
     def is_valid(self) -> bool:
         return not self.consumed and timezone.now() < self.expires_at
+
+class GlobalSettings(models.Model):
+    """Singleton for global platform settings (WhatsApp, social links, etc.)"""
+    admin_whatsapp = models.CharField(max_length=30, blank=True)
+    facebook_url = models.URLField(blank=True)
+    twitter_url = models.URLField(blank=True)
+    instagram_url = models.URLField(blank=True)
+    youtube_url = models.URLField(blank=True)
+    updated_at = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        db_table = "global_settings"
+        verbose_name = "Global Settings"
+        verbose_name_plural = "Global Settings"
+
+    def save(self, *args, **kwargs):
+        self.pk = 1
+        super().save(*args, **kwargs)
+
+    @classmethod
+    def load(cls):
+        obj, created = cls.objects.get_or_create(pk=1)
+        return obj
