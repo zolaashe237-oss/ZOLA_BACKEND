@@ -1,16 +1,89 @@
 import logging
+import requests
+from django.conf import settings
 
 logger = logging.getLogger("notifications")
 
+
+def _send_via_twilio(phone_number: str, message: str) -> bool:
+    account_sid = getattr(settings, "TWILIO_ACCOUNT_SID", "")
+    auth_token = getattr(settings, "TWILIO_AUTH_TOKEN", "")
+    from_number = getattr(settings, "TWILIO_WHATSAPP_NUMBER", "")
+
+    if not account_sid or not auth_token or not from_number:
+        logger.error("Identifiants Twilio manquants dans les paramètres.")
+        return False
+
+    to_number = phone_number if phone_number.startswith("whatsapp:") else f"whatsapp:{phone_number}"
+    from_num = from_number if from_number.startswith("whatsapp:") else f"whatsapp:{from_number}"
+
+    url = f"https://api.twilio.com/2010-04-01/Accounts/{account_sid}/Messages.json"
+    data = {
+        "From": from_num,
+        "To": to_number,
+        "Body": message,
+    }
+
+    try:
+        response = requests.post(url, data=data, auth=(account_sid, auth_token), timeout=10)
+        if response.status_code in [200, 201]:
+            logger.info("Message WhatsApp envoyé via Twilio à %s", phone_number)
+            return True
+        else:
+            logger.error("Erreur Twilio %d: %s", response.status_code, response.text)
+            return False
+    except Exception as exc:
+        logger.exception("Échec de la requête Twilio: %s", exc)
+        return False
+
+
+def _send_via_evolution_api(phone_number: str, message: str) -> bool:
+    base_url = getattr(settings, "EVOLUTION_API_URL", "").rstrip("/")
+    api_key = getattr(settings, "EVOLUTION_API_KEY", "")
+    instance_name = getattr(settings, "EVOLUTION_INSTANCE_NAME", "")
+
+    if not base_url or not api_key or not instance_name:
+        logger.error("Identifiants Evolution API manquants dans les paramètres.")
+        return False
+
+    clean_phone = phone_number.replace("+", "").replace("whatsapp:", "").strip()
+    url = f"{base_url}/message/sendText/{instance_name}"
+    headers = {
+        "apikey": api_key,
+        "Content-Type": "application/json",
+    }
+    payload = {
+        "number": clean_phone,
+        "text": message,
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=10)
+        if response.status_code in [200, 201]:
+            logger.info("Message WhatsApp envoyé via Evolution API à %s", phone_number)
+            return True
+        else:
+            logger.error("Erreur Evolution API %d: %s", response.status_code, response.text)
+            return False
+    except Exception as exc:
+        logger.exception("Échec de la requête Evolution API: %s", exc)
+        return False
+
+
 def send_whatsapp_message(phone_number: str, message: str) -> bool:
     """
-    Envoie un message WhatsApp via un provider externe.
-    (Implémentation factice pour le moment, à remplacer par l'API Twilio ou Evolution API).
+    Envoie un message WhatsApp via le provider configuré (MOCK, TWILIO, EVOLUTION_API).
     """
     if not phone_number:
         logger.warning("Tentative d'envoi WhatsApp sans numéro de téléphone.")
         return False
-        
-    # TODO: Intégrer l'API HTTP du fournisseur choisi ici.
-    logger.info("Message WhatsApp simulé pour %s : %s", phone_number, message)
-    return True
+
+    provider = getattr(settings, "WHATSAPP_PROVIDER", "MOCK").upper()
+
+    if provider == "TWILIO":
+        return _send_via_twilio(phone_number, message)
+    elif provider == "EVOLUTION_API":
+        return _send_via_evolution_api(phone_number, message)
+    else:
+        logger.info("[MOCK WHATSAPP] Destinataire: %s | Message: %s", phone_number, message)
+        return True

@@ -283,6 +283,16 @@ EMAIL_HOST_PASSWORD = env("BREVO_SMTP_KEY", default="")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="no-reply@zola-ashe.com")
 BREVO_API_KEY = env("BREVO_API_KEY", default="")
 
+# --- WhatsApp Notifications -------------------------------------------------
+WHATSAPP_PROVIDER = env("WHATSAPP_PROVIDER", default="MOCK")  # MOCK, TWILIO, EVOLUTION_API
+TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default="")
+TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default="")
+TWILIO_WHATSAPP_NUMBER = env("TWILIO_WHATSAPP_NUMBER", default="")  # e.g., 'whatsapp:+14155238886'
+
+EVOLUTION_API_URL = env("EVOLUTION_API_URL", default="")  # e.g., 'https://api.evolution.com'
+EVOLUTION_API_KEY = env("EVOLUTION_API_KEY", default="")
+EVOLUTION_INSTANCE_NAME = env("EVOLUTION_INSTANCE_NAME", default="")
+
 # Mode MOCK email : sans clé Brevo (dev/local), aucun email réel n'est envoyé
 # → on renvoie le code OTP dans la réponse API pour que le parcours d'inscription
 # / réinitialisation reste complet. Désactivé dès qu'une clé Brevo est fournie.
