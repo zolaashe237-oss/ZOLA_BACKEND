@@ -188,6 +188,22 @@ class AdminFormationViewSet(viewsets.ModelViewSet):
                target_id=formation.id, payload={"published": True})
         return Response(AdminFormationSerializer(formation).data)
 
+    @extend_schema(tags=[_TAG], summary="Supprimer définitivement une formation",
+                   description="**Suppression irréversible** : efface la formation et tout son contenu "
+                               "(modules, cours, ressources, quiz). Différent de `DELETE` qui ne fait que dépublier.",
+                   request=None,
+                   responses={204: OpenApiResponse(description="Formation supprimée définitivement.")})
+    @action(detail=True, methods=["delete"], url_path="hard-delete")
+    def hard_delete(self, request, pk=None):
+        """Suppression définitive et irréversible de la formation et de tout son contenu."""
+        formation = self.get_object()
+        title = formation.title
+        formation_id = formation.id
+        formation.delete()
+        record(request.user, AuditAction.DELETE_CONTENT, target_type="Formation",
+               target_id=formation_id, payload={"permanent": True, "title": title})
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
     @extend_schema(
         tags=[_TAG],
         summary="Uploader la couverture d'une formation",
@@ -527,7 +543,29 @@ class AdminQuizViewSet(_AuditedContentMixin, viewsets.ModelViewSet):
             qs = qs.filter(course__module__formation_id=formation) | qs.filter(formation_id=formation)
         if course := self.request.query_params.get("course"):
             qs = qs.filter(course_id=course)
+        if self.request.query_params.get("generated_by_ai") == "true":
+            qs = qs.filter(generated_by_ai=True)
         return qs.distinct()
+
+    def create(self, request, *args, **kwargs):
+        """Upsert: si un quiz existe déjà pour ce cours/formation, le remplace."""
+        data = request.data
+        course_id = data.get("course")
+        formation_id = data.get("formation")
+
+        existing = None
+        if course_id:
+            existing = Quiz.objects.filter(course_id=course_id).first()
+        elif formation_id:
+            existing = Quiz.objects.filter(formation_id=formation_id).first()
+
+        if existing:
+            serializer = self.get_serializer(existing, data=data)
+            serializer.is_valid(raise_exception=True)
+            quiz = serializer.save()
+            return Response(self.get_serializer(quiz).data, status=status.HTTP_200_OK)
+
+        return super().create(request, *args, **kwargs)
 
 
 @extend_schema(tags=[_TAG], summary="Uploader un média",
@@ -701,6 +739,73 @@ class AdminQuizResultListView(APIView):
             
         serializer = AdminQuizResultSerializer(qs, many=True)
         return Response(serializer.data)
+
+
+class QuizResultAnswersView(APIView):
+    """Détail des réponses d'un membre pour un résultat de quiz donné."""
+    permission_classes = [IsAdmin]
+
+    def get(self, request, pk):
+        result = (
+            QuizResult.objects
+            .select_related("quiz", "user")
+            .prefetch_related("quiz__questions__choices")
+            .filter(pk=pk)
+            .first()
+        )
+        if not result:
+            return Response({"detail": "Résultat introuvable."}, status=status.HTTP_404_NOT_FOUND)
+
+        last_answers = result.last_answers or {}
+        qcm_answers = last_answers.get("qcm", {})
+        qro_answers = last_answers.get("qro", {})
+
+        questions_data = []
+        for q in result.quiz.questions.all():
+            q_id = str(q.id)
+            if q.type == "QRO":
+                questions_data.append({
+                    "id": q.id,
+                    "text": q.text,
+                    "type": q.type,
+                    "criteria": q.criteria or [],
+                    "user_answer": qro_answers.get(q_id, ""),
+                    "choices": [],
+                    "is_correct": None,
+                })
+            else:
+                selected_ids = {int(c) for c in qcm_answers.get(q_id, [])}
+                correct_ids = {c.id for c in q.choices.all() if c.is_correct}
+                choices = [
+                    {
+                        "id": c.id,
+                        "text": c.text,
+                        "is_correct": c.is_correct,
+                        "selected": c.id in selected_ids,
+                    }
+                    for c in q.choices.all()
+                ]
+                questions_data.append({
+                    "id": q.id,
+                    "text": q.text,
+                    "type": q.type,
+                    "choices": choices,
+                    "is_correct": selected_ids == correct_ids and bool(correct_ids),
+                    "criteria": [],
+                    "user_answer": "",
+                })
+
+        return Response({
+            "quiz_title": result.quiz.title,
+            "user_name": result.user.full_name,
+            "user_email": result.user.email,
+            "score": result.score,
+            "max_score": 20,
+            "validated": result.validated,
+            "attempts": result.attempts,
+            "has_answers": bool(last_answers),
+            "questions": questions_data,
+        })
 
 
 # ── Import YouTube ─────────────────────────────────────────────────────────────

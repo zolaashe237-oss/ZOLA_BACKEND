@@ -264,12 +264,17 @@ def grade_quiz(quiz: Quiz, answers: dict) -> tuple[int, int, int]:
     return score, correct, total
 
 
-def record_quiz_result(user, quiz: Quiz, score: int) -> QuizResult:
+def record_quiz_result(
+    user, quiz: Quiz, score: int,
+    answers: dict | None = None,
+    qro_answers: dict | None = None,
+) -> QuizResult:
     """Enregistre une tentative et applique RG-23 à RG-26.
 
     - tentatives illimitées, +1 à chaque soumission (RG-24) ;
     - on conserve le meilleur score (RG-25) ;
     - validation si score >= seuil ; jamais de rétrogradation (RG-26).
+    - last_answers stocke les réponses de la dernière tentative (admin).
     """
     result, _ = QuizResult.objects.get_or_create(user=user, quiz=quiz)
     result.attempts += 1
@@ -278,5 +283,10 @@ def record_quiz_result(user, quiz: Quiz, score: int) -> QuizResult:
     if not result.validated and result.score >= quiz.pass_threshold:
         result.validated = True
         result.validated_at = timezone.now()
+    if answers is not None or qro_answers is not None:
+        result.last_answers = {
+            "qcm": {str(k): [int(c) for c in v] for k, v in (answers or {}).items()},
+            "qro": {str(k): v for k, v in (qro_answers or {}).items()},
+        }
     result.save()
     return result

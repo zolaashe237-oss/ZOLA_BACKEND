@@ -205,6 +205,10 @@ class Quiz(models.Model):
     pass_threshold = models.PositiveIntegerField(default=15)  # /20 (livret §4.4)
     active = models.BooleanField(default=True)
     created_at = models.DateTimeField(auto_now_add=True)
+    generated_by_ai = models.BooleanField(default=False)
+    ai_source = models.CharField(max_length=20, blank=True, default="")
+    niveau = models.CharField(max_length=20, blank=True, default="")
+    rang = models.PositiveIntegerField(null=True, blank=True)
 
     class Meta:
         db_table = "quizzes"
@@ -226,12 +230,21 @@ class Quiz(models.Model):
         return self.formation_id is not None
 
 
+class QuestionType(models.TextChoices):
+    QCM      = "QCM",       "QCM (une bonne réponse)"
+    QCM_MULTI = "QCM_MULTI", "QCM multi (plusieurs réponses)"
+    QRO      = "QRO",       "Réponse ouverte"
+
+
 class Question(models.Model):
     quiz = models.ForeignKey(Quiz, on_delete=models.CASCADE, related_name="questions")
     text = models.TextField()
-    # Plusieurs bonnes réponses possibles ? (sinon une seule option correcte).
     multiple = models.BooleanField(default=False)
     order = models.PositiveIntegerField(default=0)
+    type = models.CharField(
+        max_length=12, choices=QuestionType.choices, default=QuestionType.QCM,
+    )
+    criteria = models.JSONField(default=list, blank=True)
 
     class Meta:
         db_table = "quiz_questions"
@@ -263,6 +276,7 @@ class QuizResult(models.Model):
     attempts = models.PositiveIntegerField(default=0)
     validated = models.BooleanField(default=False)
     validated_at = models.DateTimeField(null=True, blank=True)
+    last_answers = models.JSONField(null=True, blank=True, default=None)
 
     class Meta:
         db_table = "quiz_results"

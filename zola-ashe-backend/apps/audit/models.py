@@ -23,6 +23,7 @@ class AuditAction(models.TextChoices):
     DELETE_CONTENT = "DELETE_CONTENT", "Suppression contenu"
     EXPORT_DATA = "EXPORT_DATA", "Export de données"
     SEND_REMINDER = "SEND_REMINDER", "Envoi relance"
+    SEND_NOTIFICATION = "SEND_NOTIFICATION", "Envoi notification système"
 
 
 class AuditLog(models.Model):

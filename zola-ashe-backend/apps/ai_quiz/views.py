@@ -73,8 +73,11 @@ class GenerateQuizView(GenericAPIView):
             source_text=data.get("source_text") or "",
             config={
                 "nb_questions": data["nb_questions"],
+                "nb_qcm_multi": data.get("nb_qcm_multi", 0),
                 "ratio_qcm_qro": data["ratio_qcm_qro"],
                 "difficulty": data["difficulty"],
+                "formation_title": data.get("formation_title", ""),
+                "module_title": data.get("module_title", ""),
             },
             created_by=request.user,
             status=JobStatus.PENDING,

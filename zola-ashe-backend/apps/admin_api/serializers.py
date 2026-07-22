@@ -280,19 +280,24 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Question
-        fields = ("id", "text", "multiple", "order", "choices")
+        fields = ("id", "text", "multiple", "order", "type", "criteria", "choices")
         read_only_fields = ("id",)
 
 
 class AdminQuizSerializer(serializers.ModelSerializer):
     """QCM avec questions/options imbriquées (réécriture complète à l'update)."""
     questions = AdminQuestionSerializer(many=True, required=False)
+    status = serializers.SerializerMethodField()
 
     class Meta:
         model = Quiz
         fields = ("id", "course", "formation", "title", "pass_threshold", "active",
-                  "questions", "created_at")
-        read_only_fields = ("id", "created_at")
+                  "questions", "created_at",
+                  "generated_by_ai", "ai_source", "niveau", "rang", "status")
+        read_only_fields = ("id", "created_at", "status")
+
+    def get_status(self, obj) -> str:
+        return "PUBLISHED" if obj.active else "DRAFT"
 
     def validate(self, attrs):
         course = attrs.get("course") or getattr(self.instance, "course", None)

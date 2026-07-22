@@ -174,7 +174,7 @@ class QuestionPublicSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Question
-        fields = ("id", "text", "multiple", "choices")
+        fields = ("id", "text", "multiple", "type", "criteria", "choices")
 
 
 class QuizPublicSerializer(serializers.ModelSerializer):
@@ -193,9 +193,14 @@ class QuizResultSerializer(serializers.ModelSerializer):
 
 
 class QuizSubmitSerializer(serializers.Serializer):
-    """Réponses du membre : {question_id: [choice_id, ...]}."""
+    """Réponses du membre : {question_id: [choice_id, ...]} + QRO {question_id: texte}."""
     answers = serializers.DictField(
         child=serializers.ListField(child=serializers.IntegerField(), allow_empty=True),
+    )
+    qro_answers = serializers.DictField(
+        child=serializers.CharField(allow_blank=True),
+        required=False,
+        default=dict,
     )
 
 

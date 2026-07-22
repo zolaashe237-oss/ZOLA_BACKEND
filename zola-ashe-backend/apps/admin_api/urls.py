@@ -47,6 +47,7 @@ urlpatterns = [
     path("formations/import-youtube/", vc.YoutubeImportView.as_view(), name="admin-youtube-import"),
     path("content/upload/", vc.ContentUploadView.as_view(), name="admin-content-upload"),
     path("quiz/results/", vc.AdminQuizResultListView.as_view(), name="admin-quiz-results"),
+    path("quiz/results/<int:pk>/answers/", vc.QuizResultAnswersView.as_view(), name="admin-quiz-result-answers"),
     path("quiz/score/", vc.QuizScoreView.as_view(), name="admin-quiz-score"),
     path("quiz/reset/", vc.ResetQuizView.as_view(), name="admin-quiz-reset"),
 
@@ -61,6 +62,9 @@ urlpatterns = [
     path("memoir/", vmem.AdminMemoirListView.as_view(), name="admin-memoir-list"),
     path("memoir/<int:pk>/", vmem.AdminMemoirDetailView.as_view(), name="admin-memoir-detail"),
     path("memoir/<int:pk>/docx/", vmem.AdminMemoirDocxView.as_view(), name="admin-memoir-docx"),
+
+    # Notifications système
+    path("notifications/broadcast/", vcom.AdminBroadcastNotifView.as_view(), name="admin-notif-broadcast"),
 
     # Audit
     path("audit/", vmod.AuditLogListView.as_view(), name="admin-audit"),
