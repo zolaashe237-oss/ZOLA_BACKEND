@@ -1,0 +1,87 @@
+# Override LOCAL (auto-fusionné par `docker compose`).
+# Adapte les ports à ce poste où 8000/3001/6379/5432 sont déjà pris par
+# d'autres projets, et ajoute Traefik + PgBouncer (services intégraux) avec des
+# images DÉJÀ en cache (pas de téléchargement).
+#
+# NB : les listes `ports` sont CONCATÉNÉES lors de la fusion compose ; on utilise
+# donc le tag `!override` (Compose spec) pour REMPLACER la liste de base.
+services:
+  db:
+    image: postgres:16-alpine   # image déjà en cache local (évite le pull de postgres:15)
+    ports: !override []         # pas d'exposition hôte (conflit 5432)
+  redis:
+    ports: !override []         # pas d'exposition hôte (conflit 6379)
+
+  # Pooling de connexions Postgres (mode transaction) — image en cache.
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.24.1-p1
+    environment:
+      DATABASE_URL: postgres://zola:zola@db:5432/zola   # upstream réel
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "500"
+      DEFAULT_POOL_SIZE: "20"
+      AUTH_TYPE: scram-sha-256
+    depends_on:
+      db:
+        condition: service_healthy
+
+  # Reverse-proxy (routes *.localhost) — image en cache, HTTP only (pas d'ACME en dev).
+  traefik:
+    image: traefik:v3.6.14
+    command:
+      - "--providers.docker=true"
+      - "--providers.docker.exposedbydefault=false"
+      - "--entrypoints.web.address=:80"
+      - "--api.dashboard=true"
+      - "--api.insecure=true"
+    ports:
+      - "8085:80"      # http://app.localhost:8085, api.localhost:8085, admin.localhost:8085
+      - "8086:8080"    # dashboard Traefik
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+
+  backend:
+    ports: !override ["8010:8000"]
+    environment:
+      DATABASE_URL: postgres://zola:zola@pgbouncer:5432/zola   # via le pooler
+      USE_PGBOUNCER: "True"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
+      pgbouncer:
+        condition: service_started
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.api.rule=Host(`api.localhost`)"
+      - "traefik.http.routers.api.entrypoints=web"
+      - "traefik.http.services.api.loadbalancer.server.port=8000"
+
+  celery_worker:
+    environment:
+      DATABASE_URL: postgres://zola:zola@pgbouncer:5432/zola
+      USE_PGBOUNCER: "True"
+
+  celery_beat:
+    environment:
+      DATABASE_URL: postgres://zola:zola@pgbouncer:5432/zola
+      USE_PGBOUNCER: "True"
+
+  web:
+    ports: !override ["3000:3000"]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.web.rule=Host(`app.localhost`)"
+      - "traefik.http.routers.web.entrypoints=web"
+      - "traefik.http.services.web.loadbalancer.server.port=3000"
+
+  admin:
+    ports: !override ["3010:3000"]
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.admin.rule=Host(`admin.localhost`)"
+      - "traefik.http.routers.admin.entrypoints=web"
+      - "traefik.http.services.admin.loadbalancer.server.port=3000"

@@ -1,0 +1,18 @@
+# Dependencies
+/node_modules
+
+# Next.js
+/.next/
+/out/
+next-env.d.ts
+
+# Env & secrets
+.env
+.env.*
+!.env.example
+
+# Misc
+.DS_Store
+*.log
+.idea/
+.vscode/

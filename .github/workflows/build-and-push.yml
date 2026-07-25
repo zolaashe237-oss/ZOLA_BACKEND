@@ -1,0 +1,74 @@
+name: Build & Push image (backend)
+
+# Construit l'image Docker du backend et la publie sur GHCR à chaque push
+# sur main qui touche `zola-ashe-backend/` (tags :latest et :<sha7>) ou sur
+# un tag de release (tags :v1.2.3 + :latest). Le déploiement sur le VPS
+# reste manuel pour l'instant (cf. DEPLOY.md §7).
+#
+# Important : ce workflow vit à la racine du monorepo (`zolaashe`) mais le
+# build context pointe vers le sous-dossier `zola-ashe-backend/` — c'est là
+# que vivent le Dockerfile et le code.
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+    paths:
+      - 'zola-ashe-backend/**'
+      - '.github/workflows/build-and-push.yml'
+  workflow_dispatch:   # bouton "Run workflow" dans l'onglet Actions
+
+env:
+  REGISTRY: ghcr.io
+  # IMPORTANT : GHCR exige le namespace en minuscules.
+  # On reste sur le même image-name que la prod actuelle : pas de modif côté VPS.
+  IMAGE_NAME: ghcr.io/edwintchakounte/zola-ashe-backend
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read       # checkout
+      packages: write      # push GHCR via GITHUB_TOKEN (pas de PAT requis)
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Login GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Tags & labels
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.IMAGE_NAME }}
+          # :latest sur main, :v1.2.3 sur tag semver, :<sha7> systématique
+          tags: |
+            type=ref,event=branch
+            type=ref,event=tag
+            type=semver,pattern={{version}}
+            type=sha,format=short
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build & push
+        uses: docker/build-push-action@v6
+        with:
+          context: zola-ashe-backend
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          # Cache GitHub Actions : >50 % plus rapide après le 1er build.
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          platforms: linux/amd64
+
+      - name: Image digest
+        run: echo "Pushed ${{ steps.meta.outputs.tags }}"

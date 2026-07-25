@@ -1,0 +1,12 @@
+# Env & secrets (on versionne uniquement les .example)
+env/.env
+env/.env.web
+env/.env.admin
+
+# Sauvegardes
+backups/
+
+# OS / IDE
+.DS_Store
+.idea/
+.vscode/

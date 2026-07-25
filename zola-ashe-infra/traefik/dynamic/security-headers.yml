@@ -1,0 +1,21 @@
+# Middleware d'en-têtes de sécurité, appliquable à n'importe quel router via
+# le label : traefik.http.routers.<x>.middlewares=secure-headers@file
+http:
+  middlewares:
+    secure-headers:
+      headers:
+        frameDeny: true                       # X-Frame-Options: DENY
+        contentTypeNosniff: true              # X-Content-Type-Options: nosniff
+        browserXssFilter: true
+        referrerPolicy: "strict-origin-when-cross-origin"
+        stsSeconds: 31536000                  # HSTS 1 an
+        stsIncludeSubdomains: true
+        stsPreload: true
+        customResponseHeaders:
+          Server: ""                          # masque la bannière serveur
+
+    # Limitation de débit edge (complète le throttling DRF côté backend)
+    rate-limit:
+      rateLimit:
+        average: 100
+        burst: 50

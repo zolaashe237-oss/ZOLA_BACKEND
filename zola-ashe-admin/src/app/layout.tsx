@@ -1,0 +1,28 @@
+import type { Metadata } from "next";
+import type { ReactNode } from "react";
+import "@/styles/globals.css";
+import { Providers } from "./providers";
+
+export const metadata: Metadata = {
+  title: "ZOLA ASHÉ — Admin",
+  description: "Tableau de bord d'administration ZOLA ASHÉ.",
+  robots: { index: false, follow: false },
+};
+
+export default function RootLayout({ children }: { children: ReactNode }) {
+  return (
+    <html lang="fr">
+      <head>
+        <link rel="preconnect" href="https://fonts.googleapis.com" />
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
+        <link
+          href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:wght@600;700&family=Inter:wght@400;500;600;700&display=swap"
+          rel="stylesheet"
+        />
+      </head>
+      <body>
+        <Providers>{children}</Providers>
+      </body>
+    </html>
+  );
+}

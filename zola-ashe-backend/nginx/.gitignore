@@ -1,0 +1,5 @@
+# Le contenu des certs Let's Encrypt et des challenges ACME ne doit pas être versionné.
+certs/*
+acme/*
+!certs/.gitkeep
+!acme/.gitkeep
