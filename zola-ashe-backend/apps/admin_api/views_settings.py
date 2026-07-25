@@ -1,6 +1,6 @@
 from rest_framework import generics, serializers
 from rest_framework.permissions import IsAuthenticated
-from drf_spectacular.utils import extend_schema, extend_schema_view
+from drf_spectacular.utils import extend_schema
 
 from apps.accounts.models import GlobalSettings
 

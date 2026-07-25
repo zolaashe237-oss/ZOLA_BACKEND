@@ -1,4 +1,4 @@
--# ZOLA ASHÉ — MVP 1
+# ZOLA ASHÉ — MVP 1
 
 Plateforme communautaire, éducative et spirituelle : vitrine publique, espace
 membre (contenus, formations, communauté) et back-office d'administration.
