@@ -2,14 +2,63 @@
 
 Runbook opérationnel pour appliquer les commits :
 
-- `c29894d fix(api): resoudre 500 dashboard, quiz IA et upload media`
-- `85b9960 feat(storage): bascule les medias vers MinIO auto-heberge en prod`
+- `e012045 fix(migrations): generer les migrations manquantes (bug prod latent)`
+- `b9fbf41 fix(compose): corriger tags MinIO fictifs et healthcheck impossible`
 - `ddef612 docs(deploy): runbooks operationnels pour la prod backend`
+- `85b9960 feat(storage): bascule les medias vers MinIO auto-heberge en prod`
+- `c29894d fix(api): resoudre 500 dashboard, quiz IA et upload media`
 
-Branche : `feature/albert-backend-integration-fixes` (déjà poussée sur origin).
+Branche : `main` (déjà mergée + poussée sur origin).
+
+Validé en local : 80/80 tests `apps.ai_quiz` + `apps.admin_api` OK, upload
+MinIO fonctionnel, URLs signées joignables.
 
 Voir `SETUP_MINIO_PROD.md` pour la doc de fond (architecture, pièges,
 rollback). Ce fichier-ci ne donne que l'ordre exact des commandes.
+
+---
+
+## TL;DR — enchaînement complet (copy-paste)
+
+Une fois **l'étape A faite** (vars MinIO ajoutées au `.env`), tout le reste
+tient dans un seul bloc :
+
+```bash
+cd ~/zolaashe/zola-ashe-backend
+
+# Code
+git pull --ff-only origin main
+
+# Build & recreate
+docker build -t ghcr.io/edwintchakounte/zola-ashe-backend:latest .
+docker compose -f docker-compose.prod.yml pull \
+  db redis pgbouncer nginx certbot minio minio-init
+docker compose -f docker-compose.prod.yml up -d --pull=never --force-recreate
+
+# Attendre que minio-init cree le bucket
+docker compose -f docker-compose.prod.yml logs minio-init --tail=20
+
+# Migrations (CRITIQUE : sans ca les Quiz plantent en 500)
+docker compose -f docker-compose.prod.yml exec backend python manage.py migrate
+
+# Reload nginx (nouveau prefix /zola-media/)
+docker compose -f docker-compose.prod.yml exec nginx nginx -t
+docker compose -f docker-compose.prod.yml exec nginx nginx -s reload
+
+# Sanity : upload test
+docker compose -f docker-compose.prod.yml exec backend python -c "
+from django.core.files.base import ContentFile
+from django.core.files.storage import default_storage
+name = default_storage.save('healthcheck.txt', ContentFile(b'ok'))
+print('OK :', default_storage.url(name))
+default_storage.delete(name)
+"
+```
+
+Si le `print('OK : https://api.zola-ashe.com/zola-media/...')` s'affiche → tout
+va bien, tester ensuite dashboard/quiz/upload contenu dans l'admin.
+
+Détails, edge cases et rollback ci-dessous.
 
 ---
 
@@ -87,6 +136,12 @@ docker compose -f docker-compose.prod.yml up -d --pull=never --force-recreate
 # 4. Suivre minio-init (doit finir en "bucket zola-media prêt.")
 docker compose -f docker-compose.prod.yml logs -f minio-init
 # Ctrl-C dès qu'il affiche "bucket zola-media prêt."
+
+# 5. Appliquer les 4 migrations manquantes (bug prod latent detecte en test local)
+#    Sans ca : ProgrammingError "column library_pdf_id ... does not exist" a la
+#    creation de toute instance Quiz. Voir commit e012045.
+docker compose -f docker-compose.prod.yml exec backend python manage.py migrate
+# Attendu : 4 lignes "Applying accounts.0003_globalsettings... OK" + ...
 ```
 
 ---
