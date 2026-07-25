@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
+from django.db import transaction
 from django.utils import timezone
 
 from config.celery import app
@@ -174,7 +175,6 @@ def _infer_branch(module) -> str:
 def _persist_questions(job, normalized: list[dict]) -> None:
     from .models import AIQuestion
 
-    AIQuestion.objects.filter(job=job).delete()  # au cas où retry
     to_create = [
         AIQuestion(
             job=job,
@@ -185,10 +185,13 @@ def _persist_questions(job, normalized: list[dict]) -> None:
             correct_index=q.get("correct_index"),           # None pour QCM_MULTI et QRO
             correct_indices=q.get("correct_indices") or [], # rempli pour QCM_MULTI
             criteria=q.get("criteria") or [],
+            is_published=True,
         )
         for idx, q in enumerate(normalized)
     ]
-    AIQuestion.objects.bulk_create(to_create)
+    with transaction.atomic():
+        AIQuestion.objects.filter(job=job).delete()  # au cas où retry
+        AIQuestion.objects.bulk_create(to_create)
 
 
 def _fail_job(job, message: str) -> None:

@@ -250,7 +250,10 @@ CORS_ALLOW_CREDENTIALS = True
 USE_S3 = env.bool("USE_S3", default=False)
 if USE_S3:
     STORAGES = {
-        "default": {"BACKEND": "storages.backends.s3.S3Storage"},
+        # Storage custom : les URLs signées pointent sur S3_PUBLIC_ENDPOINT_URL
+        # (nginx public), tandis que les uploads passent par AWS_S3_ENDPOINT_URL
+        # (interne minio:9000). Voir config/storages.py.
+        "default": {"BACKEND": "config.storages.PublicSignedS3Storage"},
         "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
     }
     AWS_ACCESS_KEY_ID = env("R2_ACCESS_KEY_ID")
@@ -349,7 +352,10 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # En prod, USE_S3=True → les médias vivent sur R2 (URLs signées). Le stockage
 # local ci-dessous ne sert qu'au développement sans R2.
-MEDIA_URL = "media/"
+# Slash initial obligatoire : sans lui, `default_storage.url()` renvoie une URL
+# relative que les serializers ne convertissent pas en absolue (build_absolute_uri
+# ne s'applique que sur les chemins commençant par "/").
+MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
