@@ -1,0 +1,79 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Réinitialisation du mot de passe — ZOLA ASHÉ{% endblock %}
+
+{% block header_subtitle %}
+  <p style="margin:12px 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+             font-size:13px;letter-spacing:2px;color:#6b5c42;text-transform:uppercase;">
+    Sécurité du compte
+  </p>
+{% endblock %}
+
+{% block content %}
+  <!-- Icône alerte sécurité -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:28px;">
+    <tr>
+      <td align="center">
+        <div style="display:inline-block;background-color:#fff8f0;border:1px solid rgba(181,83,42,0.25);
+                    border-radius:50%;width:72px;height:72px;line-height:72px;text-align:center;font-size:32px;">
+          🔐
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Titre -->
+  <h2 style="margin:0 0 16px;font-family:Georgia,'Times New Roman',serif;font-size:22px;
+             font-weight:700;color:#1c1409;text-align:center;line-height:1.3;">
+    Réinitialisation du mot de passe
+  </h2>
+
+  <!-- Intro -->
+  <p style="margin:0 0 32px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+             font-size:15px;color:#6b5c42;text-align:center;line-height:1.7;">
+    Nous avons reçu une demande de réinitialisation. Utilisez le code ci-dessous pour définir un nouveau mot de passe.
+    Ce code expire dans <strong style="color:#1c1409;">{{ ttl }} minutes</strong>.
+  </p>
+
+  <!-- Bloc code OTP -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:32px;">
+    <tr>
+      <td align="center">
+        <table cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="background-color:#1a140e;border-radius:10px;padding:6px;
+                       box-shadow:0 4px 16px rgba(28,20,9,0.2);">
+              <table cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="background-color:#1e1810;border-radius:8px;
+                              padding:20px 48px;border:1px solid rgba(181,83,42,0.45);">
+                    <p style="margin:0;font-family:'Courier New',Courier,monospace;
+                               font-size:38px;font-weight:700;letter-spacing:14px;
+                               color:#d4673a;text-align:center;">
+                      {{ code }}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Avertissement sécurité -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr>
+      <td style="background-color:#fff8f5;border-radius:8px;border-left:3px solid #b5532a;
+                 padding:14px 18px;">
+        <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+                   font-size:13px;color:#9e8e74;line-height:1.6;">
+          <strong style="color:#b5532a;">Vous n'êtes pas à l'origine de cette demande ?</strong><br>
+          Ignorez cet email. Votre mot de passe actuel reste inchangé. Si vous suspectez une activité
+          suspecte sur votre compte, contactez-nous immédiatement.
+        </p>
+      </td>
+    </tr>
+  </table>
+{% endblock %}

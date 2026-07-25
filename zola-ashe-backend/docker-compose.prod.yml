@@ -1,0 +1,250 @@
+# ZOLA ASHÉ — Stack de PRODUCTION (backend autonome).
+# nginx termine TLS (Let's Encrypt) sur api.<domaine>, sert les statiques
+# Django (admin + Swagger UI) et proxie le reste vers Gunicorn. Certbot
+# renouvelle les certificats en boucle. PgBouncer pose le pooling Postgres.
+# Aucun service frontend (web/admin) ni vitrine Wagtail.
+#
+# Init cert :  make prod-init-cert     (1 seule fois, ports 80 libre)
+# Lancement :  make prod-up
+services:
+  pgbouncer:
+    image: edoburu/pgbouncer:v1.24.1-p1
+    environment:
+      # pgbouncer doit toujours cibler DIRECTEMENT Postgres (jamais via lui-même,
+      # sinon boucle infinie). L'app, elle, pointe sur pgbouncer:5432 dans .env.
+      DATABASE_URL: postgres://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      POOL_MODE: transaction
+      MAX_CLIENT_CONN: "500"
+      DEFAULT_POOL_SIZE: "20"
+      # CRITIQUE : Postgres 15+ stocke les mots de passe en SCRAM-SHA-256 par défaut.
+      # Sans cette variable, pgbouncer tente du MD5 et Postgres refuse avec
+      # "wrong password type" → migrations Django jamais appliquées → DB vide.
+      AUTH_TYPE: scram-sha-256
+    depends_on:
+      db:
+        condition: service_healthy
+
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
+      interval: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    volumes:
+      - redisdata:/data
+
+  # ── MinIO : stockage objet S3-compatible (uploads médias) ─────────────
+  # Interne uniquement (pas de `ports:`). Le navigateur y accède via nginx sur
+  # https://${API_DOMAIN}/${MEDIA_BUCKET}/... — voir nginx/templates/default.conf.template.
+  # Les uploads Django passent en direct sur http://minio:9000 (endpoint interne,
+  # rapide, hors nginx). Voir SETUP_MINIO_PROD.md pour la mise en place initiale.
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${R2_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${R2_SECRET_ACCESS_KEY}
+    volumes:
+      - miniodata:/data
+    expose:
+      - "9000"
+      - "9001"
+    # Pas de healthcheck ici : l'image minio/minio (scratch) n'a ni curl ni wget
+    # ni mc. On délègue le "wait ready" au service minio-init ci-dessous, qui
+    # fait un retry-loop mc alias set (compatible toutes versions).
+
+  # ── minio-init : attente + création idempotente du bucket au premier boot ─
+  # Sans ça, le 1er upload Django échoue en NoSuchBucket. `mc mb --ignore-existing`
+  # est safe sur redeploys. Le retry-loop absorbe le démarrage MinIO (~5-15s).
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_started
+    environment:
+      MINIO_ROOT_USER: ${R2_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${R2_SECRET_ACCESS_KEY}
+      MEDIA_BUCKET: ${MEDIA_BUCKET:-zola-media}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        echo "[minio-init] attente de MinIO (jusqu'à 60s)..."
+        for i in $$(seq 1 30); do
+          if mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; then
+            echo "[minio-init] MinIO prêt."
+            break
+          fi
+          sleep 2
+        done
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing local/"$$MEDIA_BUCKET"
+        echo "[minio-init] bucket $$MEDIA_BUCKET prêt."
+    restart: "no"
+
+  backend:
+    image: ${REGISTRY:-ghcr.io/edwintchakounte}/zola-ashe-backend:${TAG:-latest}
+    pull_policy: always
+    # --timeout 600 : uploads vidéo (500 Mo) + écriture R2 peuvent dépasser
+    # le défaut gunicorn de 30 s, ce qui faisait planter les POST multipart.
+    command: gunicorn config.wsgi:application --bind 0.0.0.0:8000 --workers ${GUNICORN_WORKERS:-3} --timeout 600
+    environment:
+      DJANGO_ENV: prod
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+    env_file: .env
+    volumes:
+      - staticfiles:/app/staticfiles   # partagé avec nginx
+    expose:
+      - "8000"
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen(urllib.request.Request('http://localhost:8000/api/schema/', headers={'X-Forwarded-Proto':'https'}), timeout=2).status == 200 else 1)\""]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+      start_period: 45s
+    deploy:
+      replicas: 2          # scaling horizontal — ajuster selon la charge
+    depends_on:
+      pgbouncer:
+        condition: service_started
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
+
+  celery_worker:
+    image: ${REGISTRY:-ghcr.io/edwintchakounte}/zola-ashe-backend:${TAG:-latest}
+    pull_policy: always
+    command: celery -A config worker -l info --concurrency=4
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+    env_file: .env
+    deploy:
+      replicas: 2          # workers scalables indépendamment
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  celery_beat:
+    image: ${REGISTRY:-ghcr.io/edwintchakounte}/zola-ashe-backend:${TAG:-latest}
+    pull_policy: always
+    command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    environment:
+      DJANGO_SETTINGS_MODULE: config.settings.prod
+    env_file: .env
+    depends_on:
+      backend:
+        condition: service_healthy
+      redis:
+        condition: service_started
+
+  # ── nginx : TLS + statiques + reverse-proxy ─────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    environment:
+      API_DOMAIN: ${API_DOMAIN}
+      # Nom du bucket MinIO — sert de prefix public dans nginx (location /${MEDIA_BUCKET}/).
+      # Doit être identique à R2_BUCKET (côté backend/boto3).
+      MEDIA_BUCKET: ${MEDIA_BUCKET:-zola-media}
+    volumes:
+      - ./nginx/templates:/etc/nginx/templates:ro
+      # Scripts d'init exécutés par l'entrypoint officiel nginx :
+      # 00-bootstrap-tls.sh — pose un cert auto-signé si aucun n'existe encore.
+      # 30-reload-loop.sh   — background : reload à T+90 s (pickup cert LE) + toutes les 6 h.
+      - ./nginx/docker-entrypoint.d/00-bootstrap-tls.sh:/docker-entrypoint.d/00-bootstrap-tls.sh:ro
+      - ./nginx/docker-entrypoint.d/30-reload-loop.sh:/docker-entrypoint.d/30-reload-loop.sh:ro
+      # rw nécessaire pour que le bootstrap écrive le cert temporaire ;
+      # certbot-init et certbot (renewal) écrivent ici aussi.
+      - ./nginx/certs:/etc/letsencrypt
+      - ./nginx/acme:/var/www/certbot               # webroot ACME (HTTP-01)
+      - staticfiles:/staticfiles:ro
+    ports:
+      - "80:80"
+      - "443:443"
+    # Pas de `command:` override — c'est essentiel : l'entrypoint officiel
+    # nginx ne lance les scripts de /docker-entrypoint.d/ (envsubst sur
+    # /etc/nginx/templates/, bootstrap-tls, reload-loop) QUE quand $1 == "nginx".
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # ── certbot-init : obtention du PREMIER certificat au boot ─────────────
+  # Tourne UNE FOIS. Détecte l'absence de cert Let's Encrypt (pas de fichier
+  # de renewal) et lance le challenge HTTP-01 webroot. nginx sert déjà
+  # /.well-known/acme-challenge/ depuis ./nginx/acme. À la réussite, le
+  # vrai cert remplace l'auto-signé ; nginx recharge à T+90 s (cf. command).
+  certbot-init:
+    image: certbot/certbot
+    volumes:
+      - ./nginx/certs:/etc/letsencrypt
+      - ./nginx/acme:/var/www/certbot
+    entrypoint:
+      - /bin/sh
+      - -c
+      # NB : les `$$VAR` du shell sont échappés en `$$$$VAR` ici parce que
+      # Docker Compose interpole `$VAR` ET `${VAR}` lors de la lecture du YAML.
+      # Seul `${API_DOMAIN}` et `${ACME_EMAIL}` doivent venir de l'env Compose.
+      - |
+        LIVE=/etc/letsencrypt/live/${API_DOMAIN}/fullchain.pem
+        RENEW=/etc/letsencrypt/renewal/${API_DOMAIN}.conf
+        # Skip seulement si un VRAI cert Let's Encrypt est en place.
+        # On distingue de l'auto-signé du bootstrap-tls via l'issuer du cert.
+        if [ -f "$$RENEW" ] && [ -f "$$LIVE" ] && \
+           openssl x509 -in "$$LIVE" -noout -issuer 2>/dev/null | grep -qi "let's encrypt"; then
+          echo "[certbot-init] cert Let's Encrypt déjà en place — rien à faire."
+          exit 0
+        fi
+        # Sinon : auto-signé du bootstrap-tls, ou résidus d'une tentative
+        # certbot avortée. Certbot refuse d'écraser un live/ non géré par lui,
+        # et un renewal/.conf orphelin lui ferait croire à un cert valide.
+        # On nettoie tout pour pouvoir partir sur un certbot certonly propre.
+        if [ -d /etc/letsencrypt/live/${API_DOMAIN} ] || [ -f "$$RENEW" ]; then
+          echo "[certbot-init] nettoyage des résidus (auto-signé + renewals orphelins)..."
+          rm -rf /etc/letsencrypt/live/${API_DOMAIN} \
+                 /etc/letsencrypt/archive/${API_DOMAIN} \
+                 "$$RENEW"
+        fi
+        echo "[certbot-init] Attente de nginx (port 80)..."
+        sleep 10
+        echo "[certbot-init] Demande du certificat pour ${API_DOMAIN}..."
+        certbot certonly --webroot --webroot-path=/var/www/certbot \
+          -d ${API_DOMAIN} \
+          --email ${ACME_EMAIL} \
+          --agree-tos --no-eff-email --non-interactive
+        echo "[certbot-init] OK — nginx rechargera dans ~80 s."
+    depends_on:
+      nginx:
+        condition: service_started
+    restart: "no"
+
+  # ── certbot : boucle de renouvellement (mode webroot) ──────────────────
+  certbot:
+    image: certbot/certbot
+    volumes:
+      - ./nginx/certs:/etc/letsencrypt
+      - ./nginx/acme:/var/www/certbot
+    entrypoint: >
+      /bin/sh -c "trap exit TERM; while :; do
+        certbot renew --webroot --webroot-path=/var/www/certbot --quiet;
+        sleep 12h & wait $${!};
+      done"
+
+volumes:
+  pgdata:
+  redisdata:
+  staticfiles:
+  miniodata:

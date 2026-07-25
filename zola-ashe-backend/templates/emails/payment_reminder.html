@@ -1,0 +1,90 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Rappel de cotisation — ZOLA ASHÉ{% endblock %}
+
+{% block header_subtitle %}
+  <p style="margin:12px 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+             font-size:13px;letter-spacing:2px;color:#6b5c42;text-transform:uppercase;">
+    Rappel de cotisation
+  </p>
+{% endblock %}
+
+{% block content %}
+  <!-- Icône rappel -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:28px;">
+    <tr>
+      <td align="center">
+        <div style="display:inline-block;background-color:#fffbf0;border:1px solid rgba(154,110,16,0.3);
+                    border-radius:50%;width:72px;height:72px;line-height:72px;text-align:center;font-size:32px;">
+          ⏰
+        </div>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Titre -->
+  <h2 style="margin:0 0 16px;font-family:Georgia,'Times New Roman',serif;font-size:22px;
+             font-weight:700;color:#1c1409;text-align:center;line-height:1.3;">
+    {% if first_name %}Bonjour {{ first_name }},{% else %}Bonjour,{% endif %}
+  </h2>
+
+  <!-- Message principal -->
+  <p style="margin:0 0 28px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+             font-size:15px;color:#6b5c42;text-align:center;line-height:1.7;">
+    Votre cotisation mensuelle arrive à échéance prochainement.<br>
+    Renouvelez-la pour conserver votre accès complet à la communauté
+    et à tous ses contenus.
+  </p>
+
+  <!-- Bloc d'alerte -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:32px;">
+    <tr>
+      <td style="background-color:#fffbf0;border-radius:10px;border:1px solid rgba(154,110,16,0.3);
+                 padding:20px 24px;">
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="width:40px;vertical-align:top;padding-top:2px;">
+              <span style="font-size:20px;">⚠</span>
+            </td>
+            <td>
+              <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+                         font-size:14px;color:#9a6e10;font-weight:600;line-height:1.5;">
+                Sans renouvellement, votre accès sera suspendu à l'expiration de votre cotisation.
+              </p>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- CTA Bouton -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:32px;">
+    <tr>
+      <td align="center">
+        <table cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="background-color:#c9a227;border-radius:8px;
+                       box-shadow:0 2px 8px rgba(201,162,39,0.35);">
+              <a href="{{ app_url }}"
+                 style="display:inline-block;padding:14px 36px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+                        font-size:15px;font-weight:700;color:#1a140e;text-decoration:none;letter-spacing:0.5px;">
+                Régulariser ma cotisation →
+              </a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- Note -->
+  <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+             font-size:13px;color:#9e8e74;text-align:center;line-height:1.6;">
+    Si vous avez déjà effectué votre paiement, ignorez cet email.
+  </p>
+{% endblock %}
+
+{% block footer_note %}
+  Vous recevez ce rappel car votre cotisation arrive à échéance. Cet email est automatique.
+{% endblock %}

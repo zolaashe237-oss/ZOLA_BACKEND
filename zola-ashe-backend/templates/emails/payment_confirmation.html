@@ -1,0 +1,211 @@
+{% extends "emails/base.html" %}
+
+{% block title %}Paiement confirmé — ZOLA ASHÉ{% endblock %}
+
+{% block header_subtitle %}
+  <p style="margin:14px 0 0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+             font-size:12px;letter-spacing:3px;color:#8b7355;text-transform:uppercase;">
+    Confirmation de paiement
+  </p>
+{% endblock %}
+
+{% block content %}
+
+  <!-- ── Icône succès ──────────────────────────────────────────────── -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:28px;">
+    <tr>
+      <td align="center">
+        <table cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="width:80px;height:80px;background-color:#f0faf5;border-radius:50%;
+                       border:2.5px solid #2e9460;text-align:center;vertical-align:middle;">
+              <span style="font-size:38px;line-height:80px;color:#2e9460;display:block;">✓</span>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ── Titre ────────────────────────────────────────────────────── -->
+  <h2 style="margin:0 0 6px;font-family:Georgia,'Times New Roman',serif;font-size:24px;
+             font-weight:700;color:#1c1409;text-align:center;letter-spacing:0.5px;">
+    Paiement confirmé
+  </h2>
+  <p style="margin:0 0 8px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+             font-size:14px;color:#2e9460;font-weight:600;text-align:center;letter-spacing:0.3px;">
+    Merci pour votre confiance.
+  </p>
+
+  <!-- ── Séparateur ornemental ────────────────────────────────────── -->
+  <p style="margin:16px 0 24px;font-size:10px;letter-spacing:6px;color:#c9a22770;text-align:center;">
+    ✦ &nbsp; ✦ &nbsp; ✦
+  </p>
+
+  <!-- ── Salutation personnalisée ─────────────────────────────────── -->
+  {% if full_name %}
+  <p style="margin:0 0 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+             font-size:15px;color:#4a3b27;line-height:1.6;text-align:center;">
+    Bonjour <strong style="color:#1c1409;">{{ full_name }}</strong>,<br>
+    votre règlement a bien été enregistré.
+  </p>
+  {% else %}
+  <p style="margin:0 0 24px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+             font-size:15px;color:#4a3b27;line-height:1.6;text-align:center;">
+    Votre règlement a bien été enregistré.
+  </p>
+  {% endif %}
+
+  <!-- ── Récapitulatif de paiement ────────────────────────────────── -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:28px;">
+    <tr>
+      <td style="background-color:#faf6eb;border-radius:10px;
+                 border:1px solid rgba(201,162,39,0.28);padding:0;">
+
+        <!-- En-tête du récap -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="padding:14px 24px;background-color:#1a140e;border-radius:9px 9px 0 0;">
+              <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+                         font-size:11px;letter-spacing:2.5px;color:#c9a227;text-transform:uppercase;font-weight:600;">
+                Récapitulatif
+              </p>
+            </td>
+          </tr>
+        </table>
+
+        <!-- Lignes du récap -->
+        <table width="100%" cellpadding="0" cellspacing="0" border="0" style="padding:0 24px;">
+
+          <!-- Nature du règlement -->
+          <tr>
+            <td style="padding:16px 0 12px;border-bottom:1px solid rgba(201,162,39,0.18);"
+                colspan="2">
+              <p style="margin:0 0 4px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+                         font-size:11px;letter-spacing:1px;color:#9e8e74;text-transform:uppercase;">
+                Nature du règlement
+              </p>
+              <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:17px;
+                         font-weight:700;color:#1c1409;line-height:1.3;">
+                {% if kind == "INSCRIPTION" %}
+                  Adhésion à la communauté Zola Ashé
+                {% elif kind == "COTISATION" %}
+                  Cotisation mensuelle
+                {% elif kind == "DON" %}
+                  Don à la communauté
+                {% elif kind == "BRANCHE_FEMME" %}
+                  Accès Branche Femme
+                {% elif kind == "BRANCHE_ENFANT" %}
+                  Accès Branche Enfant
+                {% else %}
+                  Paiement reçu
+                {% endif %}
+              </p>
+            </td>
+          </tr>
+
+          <!-- Montant + Date sur la même ligne -->
+          <tr>
+            <td style="padding:14px 0 16px;width:50%;vertical-align:top;">
+              <p style="margin:0 0 4px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+                         font-size:11px;letter-spacing:1px;color:#9e8e74;text-transform:uppercase;">
+                Montant réglé
+              </p>
+              {% if amount %}
+              <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:20px;
+                         font-weight:700;color:#c9a227;letter-spacing:0.5px;">
+                {{ amount|floatformat:"0" }}&nbsp;FCFA
+              </p>
+              {% else %}
+              <p style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:16px;
+                         font-weight:700;color:#1c1409;">—</p>
+              {% endif %}
+            </td>
+            <td style="padding:14px 0 16px;width:50%;vertical-align:top;text-align:right;">
+              <p style="margin:0 0 4px;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+                         font-size:11px;letter-spacing:1px;color:#9e8e74;text-transform:uppercase;">
+                Date
+              </p>
+              <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+                         font-size:14px;font-weight:600;color:#1c1409;">
+                {{ date }}
+              </p>
+            </td>
+          </tr>
+
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ── Message contextuel selon le type ─────────────────────────── -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:32px;">
+    <tr>
+      <td style="background-color:#f4f9ff;border-radius:8px;
+                 border-left:3px solid #5b8fd4;padding:16px 20px;">
+        <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+                   font-size:14px;color:#4a3b27;line-height:1.7;">
+          {% if kind == "INSCRIPTION" %}
+            Vous êtes désormais membre de la communauté <strong>Zola Ashé</strong>. Vous avez accès
+            à l'ensemble du contenu réservé aux membres&nbsp;: formations, lives, bibliothèque et communauté.
+          {% elif kind == "COTISATION" %}
+            Votre accès membre est <strong>prolongé d'un mois</strong>. Profitez pleinement
+            de toutes les ressources disponibles dans votre espace.
+          {% elif kind == "DON" %}
+            Votre générosité nous touche profondément. Ce don contribue directement
+            au développement de la communauté <strong>Zola Ashé</strong>. Merci du fond du cœur.
+          {% elif kind == "BRANCHE_FEMME" %}
+            Vous avez désormais accès à la <strong>Branche Femme</strong> et à l'ensemble
+            de son contenu exclusif depuis votre espace membre.
+          {% elif kind == "BRANCHE_ENFANT" %}
+            Vous avez désormais accès à la <strong>Branche Enfant</strong> et à l'ensemble
+            de son contenu exclusif depuis votre espace membre.
+          {% else %}
+            Votre paiement a bien été enregistré. Vous pouvez accéder à votre espace
+            et profiter de tous les avantages de la communauté.
+          {% endif %}
+        </p>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ── Bouton CTA ────────────────────────────────────────────────── -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" style="margin-bottom:28px;">
+    <tr>
+      <td align="center">
+        <table cellpadding="0" cellspacing="0" border="0">
+          <tr>
+            <td style="background-color:#8b1a1a;border-radius:2px;">
+              <a href="{{ web_base_url }}/espace-membre"
+                 style="display:inline-block;padding:14px 40px;
+                        font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+                        font-size:13px;font-weight:700;letter-spacing:2.5px;
+                        color:#ffffff;text-decoration:none;text-transform:uppercase;">
+                Accéder à mon espace
+              </a>
+            </td>
+          </tr>
+        </table>
+      </td>
+    </tr>
+  </table>
+
+  <!-- ── Note de conservation ─────────────────────────────────────── -->
+  <table width="100%" cellpadding="0" cellspacing="0" border="0">
+    <tr>
+      <td style="background-color:#faf6eb;border-radius:8px;
+                 border:1px solid rgba(201,162,39,0.2);padding:14px 20px;">
+        <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+                   font-size:12px;color:#9e8e74;line-height:1.6;">
+          📎&nbsp; Conservez cet email comme justificatif de votre paiement. En cas de question,
+          contactez notre équipe depuis l'espace membre.
+        </p>
+      </td>
+    </tr>
+  </table>
+
+{% endblock %}
+
+{% block footer_note %}
+  Vous recevez cet email car un paiement a été effectué sur votre compte Zola Ashé.
+{% endblock %}

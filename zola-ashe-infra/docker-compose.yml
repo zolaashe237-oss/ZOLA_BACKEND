@@ -1,0 +1,100 @@
+# ZOLA ASHÉ — Stack de DÉVELOPPEMENT (polyrepo)
+# Orchestre les 4 repos clonés côte à côte : backend, web, admin + services.
+# Les build contexts pointent vers les repos voisins (../zola-ashe-*).
+# Lancer depuis ce dossier : `make up`  (ou `docker compose up --build`)
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-zola}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zola}
+      POSTGRES_DB: ${POSTGRES_DB:-zola}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zola}"]
+      interval: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "6379:6379"
+
+  # Stockage objet S3-compatible (médias : vidéo, PDF, audio) — RG-17/19.
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${R2_ACCESS_KEY_ID:-zolaminio}
+      MINIO_ROOT_PASSWORD: ${R2_SECRET_ACCESS_KEY:-zolaminiosecret}
+    volumes:
+      - miniodata:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+
+  backend:
+    build: ../zola-ashe-backend
+    env_file: ./env/.env
+    volumes:
+      - ../zola-ashe-backend:/app
+    ports:
+      - "8000:8000"
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
+
+  celery_worker:
+    build: ../zola-ashe-backend
+    command: celery -A config worker -l info
+    env_file: ./env/.env
+    volumes:
+      - ../zola-ashe-backend:/app
+    depends_on:
+      - backend
+      - redis
+
+  celery_beat:
+    build: ../zola-ashe-backend
+    command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    env_file: ./env/.env
+    volumes:
+      - ../zola-ashe-backend:/app
+    depends_on:
+      - backend
+      - redis
+
+  web:
+    build: ../zola-ashe-web
+    command: npm run dev
+    env_file: ./env/.env.web
+    volumes:
+      - ../zola-ashe-web:/app
+      - /app/node_modules
+    ports:
+      - "3000:3000"
+    depends_on:
+      - backend
+
+  admin:
+    build: ../zola-ashe-admin
+    command: npm run dev
+    env_file: ./env/.env.admin
+    volumes:
+      - ../zola-ashe-admin:/app
+      - /app/node_modules
+    ports:
+      - "3001:3000"
+    depends_on:
+      - backend
+
+volumes:
+  pgdata:
+  miniodata:

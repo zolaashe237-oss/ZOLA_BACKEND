@@ -1,0 +1,92 @@
+<!DOCTYPE html>
+<html lang="fr" xmlns="http://www.w3.org/1999/xhtml">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <title>{% block title %}ZOLA ASHÉ{% endblock %}</title>
+  <!--[if mso]>
+  <noscript>
+    <xml><o:OfficeDocumentSettings><o:PixelsPerInch>96</o:PixelsPerInch></o:OfficeDocumentSettings></xml>
+  </noscript>
+  <![endif]-->
+</head>
+<body style="margin:0;padding:0;background-color:#f2e9d4;-webkit-text-size-adjust:100%;-ms-text-size-adjust:100%;">
+  <table width="100%" cellpadding="0" cellspacing="0" border="0" role="presentation"
+         style="background-color:#f2e9d4;min-height:100vh;">
+    <tr>
+      <td align="center" valign="top" style="padding:40px 16px 48px;">
+
+        <!-- Outer wrapper 600px -->
+        <table width="600" cellpadding="0" cellspacing="0" border="0" role="presentation"
+               style="max-width:600px;width:100%;border-radius:14px;box-shadow:0 4px 24px rgba(28,20,9,0.12);">
+
+          <!-- ─── HEADER ──────────────────────────────────────────────── -->
+          <tr>
+            <td style="background-color:#1a140e;border-radius:14px 14px 0 0;padding:36px 48px 28px;text-align:center;">
+              <!-- Ornement supérieur -->
+              <p style="margin:0 0 12px;font-size:11px;letter-spacing:6px;color:#c9a227;font-family:Georgia,serif;">
+                ✦ &nbsp; ✦ &nbsp; ✦
+              </p>
+              <!-- Logo textuel -->
+              <h1 style="margin:0;font-family:Georgia,'Times New Roman',serif;font-size:28px;
+                         font-weight:700;letter-spacing:5px;color:#c9a227;text-transform:uppercase;
+                         line-height:1.1;">
+                ZOLA ASHÉ
+              </h1>
+              <!-- Sous-titre de l'email -->
+              {% block header_subtitle %}{% endblock %}
+            </td>
+          </tr>
+
+          <!-- ─── BODY ─────────────────────────────────────────────────── -->
+          <tr>
+            <td style="background-color:#ffffff;padding:48px 48px 40px;
+                       border-left:1px solid #e8dfc8;border-right:1px solid #e8dfc8;">
+              {% block content %}{% endblock %}
+            </td>
+          </tr>
+
+          <!-- ─── SEPARATOR ─────────────────────────────────────────────── -->
+          <tr>
+            <td style="background-color:#faf6eb;padding:0 48px;
+                       border-left:1px solid #e8dfc8;border-right:1px solid #e8dfc8;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="border-top:1px solid rgba(201,162,39,0.25);padding-top:24px;padding-bottom:24px;">
+                    <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+                               font-size:13px;color:#9e8e74;text-align:center;line-height:1.6;">
+                      {% block footer_note %}Cet email a été envoyé automatiquement — merci de ne pas y répondre.{% endblock %}
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+          <!-- ─── FOOTER ────────────────────────────────────────────────── -->
+          <tr>
+            <td style="background-color:#1a140e;border-radius:0 0 14px 14px;padding:24px 48px;">
+              <table width="100%" cellpadding="0" cellspacing="0" border="0">
+                <tr>
+                  <td style="text-align:center;">
+                    <p style="margin:0 0 6px;font-family:Georgia,serif;font-size:13px;
+                               letter-spacing:3px;color:#c9a227;">ZOLA ASHÉ</p>
+                    <p style="margin:0;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;
+                               font-size:11px;color:#6b5c42;letter-spacing:0.5px;">
+                      &copy; {{ year }} &nbsp;·&nbsp; Tous droits réservés
+                    </p>
+                  </td>
+                </tr>
+              </table>
+            </td>
+          </tr>
+
+        </table>
+        <!-- /wrapper -->
+
+      </td>
+    </tr>
+  </table>
+</body>
+</html>

@@ -1,0 +1,108 @@
+# ZOLA ASHÉ — Stack de DÉVELOPPEMENT (backend autonome).
+# Contient UNIQUEMENT le backend Django et ses dépendances (db, redis, minio,
+# celery, nginx). Les frontends (web, admin) et la vitrine Wagtail ne sont PAS
+# inclus. Nginx sert les statiques et proxie vers Gunicorn/runserver.
+#
+# Lancement :  make up    (ou : docker compose --env-file .env up -d --build)
+services:
+  db:
+    image: postgres:15
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-zola}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-zola}
+      POSTGRES_DB: ${POSTGRES_DB:-zola}
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    ports:
+      - "${POSTGRES_HOST_PORT:-5432}:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-zola}"]
+      interval: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    ports:
+      - "${REDIS_HOST_PORT:-6379}:6379"
+
+  # Stockage objet S3-compatible pour les médias (vidéo, PDF, audio).
+  # En prod, basculer sur Cloudflare R2 via USE_S3=True + R2_* (cf. .env.example).
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${R2_ACCESS_KEY_ID:-zolaminio}
+      MINIO_ROOT_PASSWORD: ${R2_SECRET_ACCESS_KEY:-zolaminiosecret}
+    volumes:
+      - miniodata:/data
+    ports:
+      - "${MINIO_HOST_PORT:-9000}:9000"
+      - "${MINIO_CONSOLE_HOST_PORT:-9001}:9001"
+
+  backend:
+    build: .
+    env_file: .env
+    volumes:
+      - .:/app
+      - staticfiles:/app/staticfiles   # statiques collectés -> partagés avec nginx
+      - mediafiles:/app/media          # médias locaux -> partagés avec nginx
+    # Pas de port exposé : tout passe par nginx.
+    expose:
+      - "8000"
+    healthcheck:
+      # /api/schema/ est public ET ne répond qu'après migrate — bon signal.
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://localhost:8000/api/schema/', timeout=2).status == 200 else 1)\""]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      minio:
+        condition: service_started
+
+  celery_worker:
+    build: .
+    command: celery -A config worker -l info
+    env_file: .env
+    volumes:
+      - .:/app
+    depends_on:
+      backend:
+        condition: service_healthy   # migrations terminées
+      redis:
+        condition: service_started
+
+  celery_beat:
+    build: .
+    command: celery -A config beat -l info --scheduler django_celery_beat.schedulers:DatabaseScheduler
+    env_file: .env
+    volumes:
+      - .:/app
+    depends_on:
+      backend:
+        condition: service_healthy   # tables django_celery_beat créées
+      redis:
+        condition: service_started
+
+  # ── Reverse-proxy + serveur de statiques ───────────────────────────────
+  nginx:
+    image: nginx:1.27-alpine
+    volumes:
+      - ./nginx/conf.d:/etc/nginx/conf.d:ro
+      - staticfiles:/staticfiles:ro
+      - mediafiles:/mediafiles:ro
+    ports:
+      - "${NGINX_HOST_PORT:-8000}:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  miniodata:
+  staticfiles:
+  mediafiles:
