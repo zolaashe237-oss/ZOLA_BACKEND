@@ -2,7 +2,7 @@
 import csv
 from datetime import timedelta
 
-from django.db.models import Sum, Q
+from django.db.models import DateTimeField, OuterRef, Q, Subquery, Sum
 from django.http import HttpResponse, StreamingHttpResponse
 from django.utils import timezone
 from drf_spectacular.types import OpenApiTypes
@@ -46,6 +46,18 @@ def _month_start():
     return timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
+def _last_cotisation_subquery():
+    """Sous-requête : `paid_at` du dernier paiement COTISATION VALIDE d'un user."""
+    return Subquery(
+        Payment.objects.filter(
+            user=OuterRef("pk"),
+            type=PaymentType.COTISATION,
+            status=PaymentStatus.VALIDE,
+        ).order_by("-paid_at").values("paid_at")[:1],
+        output_field=DateTimeField(),
+    )
+
+
 @extend_schema(tags=[_TAG], summary="Tableau de bord (KPIs)",
                description="Indicateurs temps réel : membres actifs/restreints, revenus du mois, "
                            "cotisations en retard, signalements en attente, nouveaux membres, modules validés.",
@@ -63,13 +75,15 @@ class DashboardView(APIView):
             .aggregate(total=Sum("amount"))["total"] or 0
         )
         # Membres en retard : dernier paiement COTISATION VALIDE > 30 jours.
-        late = 0
-        for user in User.objects.filter(role=Role.MEMBER, status=UserStatus.ACTIF):
-            last = (Payment.objects.filter(user=user, type=PaymentType.COTISATION,
-                                           status=PaymentStatus.VALIDE)
-                    .order_by("-paid_at").first())
-            if last is None or last.paid_at < late_threshold:
-                late += 1
+        # Une seule requête via Subquery + filter — O(1) au lieu de O(N).
+        late = (
+            User.objects
+            .filter(role=Role.MEMBER, status=UserStatus.ACTIF)
+            .annotate(last_cotisation_at=_last_cotisation_subquery())
+            .filter(Q(last_cotisation_at__isnull=True)
+                    | Q(last_cotisation_at__lt=late_threshold))
+            .count()
+        )
 
         return Response({
             "members_active": User.objects.filter(status=UserStatus.ACTIF).count(),
@@ -243,17 +257,23 @@ class SendRemindersView(APIView):
         late_threshold = timezone.now() - timedelta(days=30)
         targets = []
 
-        qs = User.objects.filter(role=Role.MEMBER, status=UserStatus.ACTIF)
+        qs = (
+            User.objects
+            .filter(role=Role.MEMBER, status=UserStatus.ACTIF)
+            .annotate(last_cotisation_at=_last_cotisation_subquery())
+            .filter(Q(last_cotisation_at__isnull=True)
+                    | Q(last_cotisation_at__lt=late_threshold))
+        )
         if user_id:
             qs = qs.filter(pk=user_id)
 
-        for user in qs:
-            last = (Payment.objects.filter(user=user, type=PaymentType.COTISATION,
-                                           status=PaymentStatus.VALIDE)
-                    .order_by("-paid_at").first())
-            if last is None or last.paid_at < late_threshold:
+        for user in qs.only("id"):
+            try:
                 send_payment_reminder.delay(user.id)
-                targets.append(user.id)
+            except Exception:
+                # File Celery indisponible : on continue plutôt que 500.
+                continue
+            targets.append(user.id)
 
         record(request.user, AuditAction.SEND_REMINDER,
                reason="Relance individuelle" if user_id else "Relance groupée cotisations",
@@ -339,28 +359,25 @@ class LateCotisationsView(APIView):
         except SubscriptionPlan.DoesNotExist:
             unit_price = getattr(settings, "PRICE_COTISATION", 10000)
 
+        late_qs = (
+            User.objects
+            .filter(role=Role.MEMBER, status=UserStatus.ACTIF)
+            .annotate(last_cotisation_at=_last_cotisation_subquery())
+            .filter(Q(last_cotisation_at__isnull=True)
+                    | Q(last_cotisation_at__lt=late_threshold))
+        )
+
         results = []
-        for user in User.objects.filter(role=Role.MEMBER, status=UserStatus.ACTIF):
-            last = (
-                Payment.objects
-                .filter(user=user, type=PaymentType.COTISATION, status=PaymentStatus.VALIDE)
-                .order_by("-paid_at")
-                .first()
-            )
-            if last is None or last.paid_at < late_threshold:
-                if last is None:
-                    # Jamais payé — retard depuis la date d'inscription
-                    delta_days = (now - user.created_at).days
-                else:
-                    delta_days = (now - last.paid_at).days
+        for user in late_qs:
+            ref_date = user.last_cotisation_at or user.created_at
+            delta_days = (now - ref_date).days
+            months_late = max(1, delta_days // 30)
+            amount_due = months_late * unit_price
 
-                months_late = max(1, delta_days // 30)
-                amount_due  = months_late * unit_price
-
-                data = MemberListSerializer(user).data
-                data["months_late"] = months_late
-                data["amount_due"]  = amount_due
-                results.append(data)
+            data = MemberListSerializer(user).data
+            data["months_late"] = months_late
+            data["amount_due"] = amount_due
+            results.append(data)
 
         return Response(results)
 
