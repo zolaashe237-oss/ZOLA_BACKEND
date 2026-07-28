@@ -5,7 +5,7 @@ from typing import Any
 import requests
 from django.conf import settings
 
-logger = logging.getLogger("notifications")
+logger = logging.getLogger(__name__)
 
 
 def _clean_phone(phone_number: str) -> str:
