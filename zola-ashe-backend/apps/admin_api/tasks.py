@@ -65,11 +65,11 @@ def ping():
 
 @app.task
 def send_block_notification(user_id: int, reason: str):
-    """Envoie une notification de blocage par email et WhatsApp."""
+    """Envoie une notification de blocage par email et WhatsApp (via template)."""
     from django.conf import settings
     from django.core.mail import send_mail
     from apps.accounts.models import User
-    from apps.notifications.whatsapp import send_whatsapp_message
+    from apps.notifications.whatsapp import WhatsAppService
 
     user = User.objects.filter(id=user_id).first()
     if not user:
@@ -81,7 +81,11 @@ def send_block_notification(user_id: int, reason: str):
     send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email], fail_silently=True)
     
     if user.phone:
-        whatsapp_msg = f"ZOLA ASHÉ - Votre compte a été bloqué. Motif: {reason}"
-        send_whatsapp_message(user.phone, whatsapp_msg)
+        service = WhatsAppService()
+        service.send_template_message(
+            phone_number=user.phone,
+            template_slug="block_notification",
+            variables={"reason": reason},
+        )
         
     return f"Block notification sent to {user.email}"

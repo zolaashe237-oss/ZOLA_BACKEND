@@ -12,6 +12,7 @@ from . import views_moderation as vmod
 from . import views_progression as vp
 from . import views_community as vcom
 from . import views_settings as vset
+from . import views_whatsapp as vw
 
 router = DefaultRouter()
 router.register("members", vm.MemberViewSet, basename="admin-member")
@@ -74,6 +75,11 @@ urlpatterns = [
 
     # Paramètres globaux
     path("settings/", vset.AdminGlobalSettingsView.as_view(), name="admin-settings"),
+
+    # Templates WhatsApp
+    path("whatsapp/templates/", vw.WhatsAppTemplateListCreateView.as_view(), name="admin-whatsapp-template-list"),
+    path("whatsapp/templates/<int:pk>/", vw.WhatsAppTemplateDetailView.as_view(), name="admin-whatsapp-template-detail"),
+    path("whatsapp/send/", vw.SendWhatsAppMessageView.as_view(), name="admin-whatsapp-send"),
 
     *router.urls,
 ]
