@@ -2,7 +2,7 @@
 from django.contrib.auth.password_validation import validate_password
 from rest_framework import serializers
 
-from .models import User, UserStatus
+from .models import User, UserStatus, GlobalSettings
 
 
 class UserSerializer(serializers.ModelSerializer):
@@ -97,7 +97,7 @@ class EmailChangeRequestSerializer(serializers.Serializer):
 class EmailChangeConfirmSerializer(serializers.Serializer):
     code = serializers.CharField(min_length=6, max_length=6, help_text="Code OTP envoyé à la nouvelle adresse.")
 
-from .models import GlobalSettings
+
 class GlobalSettingsSerializer(serializers.ModelSerializer):
     class Meta:
         model = GlobalSettings

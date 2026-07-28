@@ -664,3 +664,38 @@ class AdminMemoirDetailSerializer(AdminMemoirListSerializer):
     class Meta(AdminMemoirListSerializer.Meta):
         fields = AdminMemoirListSerializer.Meta.fields + ["answers"]
         read_only_fields = AdminMemoirListSerializer.Meta.read_only_fields + ["answers"]
+
+
+# ─── Templates WhatsApp ──────────────────────────────────────────────────────
+
+from apps.notifications.models import WhatsAppTemplate  # noqa: E402
+
+
+class WhatsAppTemplateSerializer(serializers.ModelSerializer):
+    class Meta:
+        model = WhatsAppTemplate
+        fields = ("id", "name", "slug", "body", "category", "language",
+                  "is_active", "variables_count", "twilio_template_sid",
+                  "created_at", "updated_at")
+        read_only_fields = ("id", "created_at", "updated_at")
+
+
+class SendWhatsAppMessageSerializer(serializers.Serializer):
+    """Serializer pour l'envoi de message WhatsApp."""
+    phone_number = serializers.CharField(max_length=30)
+    message = serializers.CharField(required=False, allow_blank=True)
+    template_slug = serializers.SlugField(required=False, allow_blank=True)
+    variables = serializers.DictField(
+        child=serializers.CharField(), required=False, default=dict
+    )
+    provider = serializers.ChoiceField(
+        choices=["MOCK", "TWILIO", "EVOLUTION_API"],
+        required=False, default=""
+    )
+
+    def validate(self, attrs):
+        if not attrs.get("message") and not attrs.get("template_slug"):
+            raise serializers.ValidationError(
+                "Soit 'message' (sans template) soit 'template_slug' (avec template) est requis."
+            )
+        return attrs
