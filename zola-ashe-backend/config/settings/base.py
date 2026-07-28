@@ -64,6 +64,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "apps.content.middleware.SequentialCourseAccessMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -143,7 +144,7 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 # --- DRF & JWT --------------------------------------------------------------
-import sys
+import sys  # noqa: E402
 IS_TESTING = "test" in sys.argv
 
 REST_FRAMEWORK = {
