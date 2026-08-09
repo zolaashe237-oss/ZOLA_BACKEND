@@ -1,0 +1,109 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 720" font-family="ui-monospace, Menlo, monospace">
+  <defs>
+    <marker id="arrowFm" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#1F2937"/>
+    </marker>
+  </defs>
+  <rect width="100%" height="100%" fill="#FEFEFE"/>
+
+  <text x="480" y="34" font-size="22" font-weight="700" text-anchor="middle" fill="#6B1E2F" font-family="system-ui, sans-serif">
+    Cartographie des fichiers — module YouTube OAuth
+  </text>
+  <text x="480" y="56" font-size="13" text-anchor="middle" fill="#6B7280" font-family="system-ui, sans-serif">
+    Tous les fichiers touchés + leur rôle exact + qui appelle quoi
+  </text>
+
+  <!-- Config/Secrets group -->
+  <rect x="30" y="90" width="410" height="180" rx="10" fill="#EDE9FE" stroke="#7C3AED" stroke-width="2"/>
+  <text x="45" y="112" font-size="14" font-weight="700" fill="#5B21B6" font-family="system-ui, sans-serif">📋 Configuration &amp; Secrets</text>
+
+  <rect x="50" y="128" width="370" height="46" rx="4" fill="#F5F3FF" stroke="#7C3AED" stroke-width="1"/>
+  <text x="60" y="148" font-size="12" fill="#1F2937">.env</text>
+  <text x="60" y="165" font-size="10" fill="#6B7280" font-family="system-ui, sans-serif">Contient les 3 vars OAuth (JAMAIS commité)</text>
+
+  <rect x="50" y="182" width="370" height="46" rx="4" fill="#F5F3FF" stroke="#7C3AED" stroke-width="1"/>
+  <text x="60" y="202" font-size="12" fill="#1F2937">.env.example</text>
+  <text x="60" y="219" font-size="10" fill="#6B7280" font-family="system-ui, sans-serif">Template avec les 3 clés vides (commité, docs)</text>
+
+  <rect x="50" y="236" width="370" height="26" rx="4" fill="#F5F3FF" stroke="#7C3AED" stroke-width="1"/>
+  <text x="60" y="254" font-size="12" fill="#1F2937">config/settings/base.py</text>
+
+  <!-- Code group -->
+  <rect x="470" y="90" width="460" height="330" rx="10" fill="#DCFCE7" stroke="#059669" stroke-width="2"/>
+  <text x="485" y="112" font-size="14" font-weight="700" fill="#065F46" font-family="system-ui, sans-serif">🐍 Code Django</text>
+
+  <rect x="490" y="128" width="420" height="80" rx="4" fill="#F0FDF4" stroke="#059669" stroke-width="1.5"/>
+  <text x="500" y="148" font-size="12" font-weight="700" fill="#1F2937">apps/ai_quiz/extractors/youtube.py</text>
+  <text x="500" y="165" font-size="10" fill="#6B7280" font-family="system-ui, sans-serif">Le CŒUR — 221 lignes, ~7 fonctions</text>
+  <text x="500" y="182" font-size="10" fill="#374151">extract_youtube_id() · extract_youtube_transcript()</text>
+  <text x="500" y="198" font-size="10" fill="#374151">_build_youtube_service() · _pick_caption_track()</text>
+
+  <rect x="490" y="216" width="420" height="64" rx="4" fill="#F0FDF4" stroke="#059669" stroke-width="1.5"/>
+  <text x="500" y="236" font-size="12" font-weight="700" fill="#1F2937">apps/ai_quiz/management/commands/</text>
+  <text x="500" y="252" font-size="12" font-weight="700" fill="#1F2937">youtube_oauth_bootstrap.py</text>
+  <text x="500" y="270" font-size="10" fill="#6B7280" font-family="system-ui, sans-serif">Génère le refresh_token (à lancer 1× sur laptop)</text>
+
+  <rect x="490" y="288" width="420" height="46" rx="4" fill="#F0FDF4" stroke="#059669" stroke-width="1.5"/>
+  <text x="500" y="308" font-size="12" fill="#1F2937">apps/content/services.py</text>
+  <text x="500" y="325" font-size="10" fill="#6B7280" font-family="system-ui, sans-serif">Wrapper fail-silent — retourne "" en cas d'échec</text>
+
+  <rect x="490" y="342" width="420" height="46" rx="4" fill="#F0FDF4" stroke="#059669" stroke-width="1.5"/>
+  <text x="500" y="362" font-size="12" fill="#1F2937">apps/ai_quiz/tasks.py</text>
+  <text x="500" y="379" font-size="10" fill="#6B7280" font-family="system-ui, sans-serif">Celery — appelle l'extracteur pour VIDEO_YOUTUBE / MULTI_YOUTUBE</text>
+
+  <rect x="490" y="396" width="420" height="16" rx="4" fill="#F0FDF4" stroke="#059669" stroke-width="1.5"/>
+  <text x="500" y="409" font-size="11" fill="#1F2937">apps/admin_api/views_content.py:66 (appelle le wrapper)</text>
+
+  <!-- Deps group -->
+  <rect x="30" y="290" width="410" height="130" rx="10" fill="#FEF3C7" stroke="#D97706" stroke-width="2"/>
+  <text x="45" y="312" font-size="14" font-weight="700" fill="#92400E" font-family="system-ui, sans-serif">📦 Dépendances Python</text>
+
+  <rect x="50" y="326" width="370" height="26" rx="4" fill="#FFFBEB" stroke="#D97706" stroke-width="1"/>
+  <text x="60" y="344" font-size="12" fill="#1F2937">requirements.txt (bloc « IA »)</text>
+
+  <text x="60" y="370" font-size="11" fill="#374151">
+    <tspan font-weight="700">google-api-python-client</tspan>&gt;=2.140 (déjà présent)
+  </text>
+  <text x="60" y="386" font-size="11" fill="#374151">
+    <tspan font-weight="700">google-auth</tspan>&gt;=2.30 (AJOUTÉ)
+  </text>
+  <text x="60" y="402" font-size="11" fill="#374151">
+    <tspan font-weight="700">google-auth-oauthlib</tspan>&gt;=1.2 (AJOUTÉ)
+  </text>
+
+  <!-- Docs group -->
+  <rect x="30" y="440" width="900" height="130" rx="10" fill="#DBEAFE" stroke="#2563EB" stroke-width="2"/>
+  <text x="45" y="462" font-size="14" font-weight="700" fill="#1E3A8A" font-family="system-ui, sans-serif">📖 Documentation / Runbooks</text>
+
+  <rect x="50" y="476" width="435" height="80" rx="4" fill="#EFF6FF" stroke="#2563EB" stroke-width="1"/>
+  <text x="60" y="496" font-size="12" font-weight="700" fill="#1F2937">SETUP_YOUTUBE_OFFICIAL_API.md</text>
+  <text x="60" y="512" font-size="10" fill="#6B7280" font-family="system-ui, sans-serif">Runbook complet 8 étapes : GCP setup jusqu'au</text>
+  <text x="60" y="527" font-size="10" fill="#6B7280" font-family="system-ui, sans-serif">déploiement prod + rollback + suivi quotas</text>
+
+  <rect x="495" y="476" width="435" height="80" rx="4" fill="#EFF6FF" stroke="#2563EB" stroke-width="1"/>
+  <text x="505" y="496" font-size="12" font-weight="700" fill="#1F2937">notes/quiz-youtube-architecture.md</text>
+  <text x="505" y="512" font-size="10" fill="#6B7280" font-family="system-ui, sans-serif">Ce document — architecture, flux, images pour</text>
+  <text x="505" y="527" font-size="10" fill="#6B7280" font-family="system-ui, sans-serif">comprendre en profondeur le module</text>
+
+  <!-- Flèches de dépendance -->
+  <line x1="440" y1="196" x2="480" y2="150" stroke="#1F2937" stroke-width="1.5" marker-end="url(#arrowFm)"/>
+  <text x="450" y="180" font-size="9" fill="#374151" font-family="system-ui, sans-serif">lu par</text>
+
+  <line x1="440" y1="360" x2="480" y2="245" stroke="#1F2937" stroke-width="1.5" marker-end="url(#arrowFm)"/>
+  <text x="450" y="305" font-size="9" fill="#374151" font-family="system-ui, sans-serif">import</text>
+
+  <!-- Résumé au bas -->
+  <rect x="30" y="590" width="900" height="110" rx="10" fill="#F3F4F6" stroke="#6B7280" stroke-width="1.5"/>
+  <text x="480" y="614" font-size="14" font-weight="700" text-anchor="middle" fill="#1F2937" font-family="system-ui, sans-serif">
+    Résumé : 8 fichiers touchés
+  </text>
+  <text x="480" y="638" font-size="11" text-anchor="middle" fill="#374151" font-family="system-ui, sans-serif">
+    5 modifiés : .env.example · settings/base.py · extractors/youtube.py · content/services.py · requirements.txt
+  </text>
+  <text x="480" y="658" font-size="11" text-anchor="middle" fill="#374151" font-family="system-ui, sans-serif">
+    3 nouveaux : management/commands/youtube_oauth_bootstrap.py · SETUP_YOUTUBE_OFFICIAL_API.md · notes/
+  </text>
+  <text x="480" y="682" font-size="11" text-anchor="middle" fill="#6B7280" font-family="system-ui, sans-serif" font-style="italic">
+    Zéro fichier caller modifié — le remplacement est 100 % transparent grâce au maintien du contrat de fonction.
+  </text>
+</svg>

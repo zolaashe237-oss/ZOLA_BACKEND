@@ -288,7 +288,8 @@ Deps ajoutées à `requirements.txt` :
 ```
 google-generativeai>=0.8
 google-api-python-client>=2.140
-youtube-transcript-api>=0.6
+google-auth>=2.30
+google-auth-oauthlib>=1.2
 pymupdf>=1.24
 ```
 
@@ -367,7 +368,7 @@ docker exec zola-ashe-backend-backend-1 python manage.py shell -c \
 ## 11 · Points d'attention post-mortem
 
 - Gemini **2.5 Flash** utilisé (le "3.5" du sprint n'existe pas côté Google). Configurable via `GEMINI_MODEL`.
-- `youtube-transcript-api` privilégié à `googleapiclient.captions()` — pas d'OAuth requis.
+- **Migration 2026-08 : bascule vers l'API officielle YouTube Data v3 + OAuth 2.0** (`googleapiclient.captions()`). Raison : `youtube-transcript-api` (lib non officielle, endpoint `timedtext` scrapé) est blacklistée par YouTube depuis les IPs de VPS cloud. La contrepartie : `captions.download` exige que le compte OAuth soit propriétaire des vidéos ciblées. Voir `SETUP_YOUTUBE_OFFICIAL_API.md` pour le setup et `notes/quiz-youtube-architecture.md` pour l'architecture.
 - Extraction PDF via `default_storage.open()` → marche en local (disque) et en prod (Cloudflare R2).
 - `resulting_quiz` sur `AIQuizJob` reste `NULL` — la conversion `AIQuestion → content.Question` (publication du quiz) est le workflow suivant, à câbler côté admin/back-office (hors sprint IA-BE).
 - La classification (IA-B8) est **best-effort** : elle ne casse jamais la génération. Le niveau et le rang restent éditables par l'admin.
