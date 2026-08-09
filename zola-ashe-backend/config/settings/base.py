@@ -371,6 +371,15 @@ GEMINI_MAX_RETRIES = env.int("GEMINI_MAX_RETRIES", default=2)
 AI_ENABLED = env.bool("AI_ENABLED", default=True)
 YOUTUBE_API_KEY = env("YOUTUBE_API_KEY", default="")
 
+# --- YouTube Data API v3 (OAuth 2.0) ----------------------------------------
+# Extraction officielle des transcriptions. Le compte OAuth doit être
+# propriétaire des vidéos ciblées (captions.download refuse les vidéos
+# tierces). Bootstrap : `python manage.py youtube_oauth_bootstrap`.
+# Voir SETUP_YOUTUBE_OFFICIAL_API.md pour la préparation GCP.
+YOUTUBE_OAUTH_CLIENT_ID = env("YOUTUBE_OAUTH_CLIENT_ID", default="")
+YOUTUBE_OAUTH_CLIENT_SECRET = env("YOUTUBE_OAUTH_CLIENT_SECRET", default="")
+YOUTUBE_OAUTH_REFRESH_TOKEN = env("YOUTUBE_OAUTH_REFRESH_TOKEN", default="")
+
 # --- Logging ----------------------------------------------------------------
 LOGGING = {
     "version": 1,

@@ -130,7 +130,9 @@ class YoutubeExtractorTest(TestCase):
         from .extractors import extract_youtube_id
         for url, expected in [
             ("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "dQw4w9WgXcQ"),
+            ("https://www.youtube.com/watch?v=dQw4w9WgXcQ&t=42s", "dQw4w9WgXcQ"),
             ("https://youtu.be/dQw4w9WgXcQ", "dQw4w9WgXcQ"),
+            ("https://www.youtube.com/embed/dQw4w9WgXcQ", "dQw4w9WgXcQ"),
             ("https://www.youtube.com/shorts/dQw4w9WgXcQ", "dQw4w9WgXcQ"),
             ("dQw4w9WgXcQ", "dQw4w9WgXcQ"),
         ]:
@@ -140,6 +142,89 @@ class YoutubeExtractorTest(TestCase):
         from .extractors import extract_youtube_id
         with self.assertRaises(ValueError):
             extract_youtube_id("https://vimeo.com/12345")
+
+    def test_extract_transcript_fails_when_oauth_not_configured(self):
+        """Sans les 3 vars OAuth, TranscriptNotAvailable est levée avec
+        un message actionable pointant vers le runbook (fail-safe RG-31)."""
+        from django.test import override_settings
+        from .extractors.youtube import (
+            TranscriptNotAvailable,
+            extract_youtube_transcript,
+        )
+        with override_settings(
+            YOUTUBE_OAUTH_CLIENT_ID="",
+            YOUTUBE_OAUTH_CLIENT_SECRET="",
+            YOUTUBE_OAUTH_REFRESH_TOKEN="",
+        ):
+            with self.assertRaises(TranscriptNotAvailable) as ctx:
+                extract_youtube_transcript("https://youtu.be/dQw4w9WgXcQ")
+            msg = str(ctx.exception)
+            self.assertIn("OAuth YouTube non configuré", msg)
+            self.assertIn("SETUP_YOUTUBE_OFFICIAL_API.md", msg)
+
+    def test_srt_parser_strips_indexes_timings_and_tags(self):
+        """_srt_to_plain_text retire séquences, timings, tags inline et brackets."""
+        from .extractors.youtube import _srt_to_plain_text
+        srt = (
+            "1\n"
+            "00:00:00,000 --> 00:00:03,500\n"
+            "Bonjour <c>et</c> bienvenue.\n"
+            "\n"
+            "2\n"
+            "00:00:03,500 --> 00:00:07,000\n"
+            "[Musique] On commence.\n"
+        )
+        self.assertEqual(
+            _srt_to_plain_text(srt), "Bonjour et bienvenue. On commence."
+        )
+
+    def test_pick_caption_track_prefers_french(self):
+        """Priorité fr → en → fallback : sélectionne la piste FR quand dispo."""
+        from .extractors.youtube import _pick_caption_track
+
+        class _Resp:
+            def __init__(self, items):
+                self.items = items
+            def execute(self):
+                return {"items": self.items}
+
+        class _Captions:
+            def __init__(self, items):
+                self.items = items
+            def list(self, **kw):
+                return _Resp(self.items)
+
+        class _Service:
+            def __init__(self, items):
+                self._items = items
+            def captions(self):
+                return _Captions(self._items)
+
+        service = _Service([
+            {"id": "en1", "snippet": {"language": "en", "trackKind": ""}},
+            {"id": "fr1", "snippet": {"language": "fr", "trackKind": ""}},
+        ])
+        caption_id, lang = _pick_caption_track(service, "abc", ["fr", "en"])
+        self.assertEqual(caption_id, "fr1")
+        self.assertEqual(lang, "fr")
+
+    def test_pick_caption_track_returns_none_when_no_tracks(self):
+        """Vidéo sans sous-titres → (None, None) → l'appelant lève TranscriptNotAvailable."""
+        from .extractors.youtube import _pick_caption_track
+
+        class _Service:
+            def captions(self):
+                class _C:
+                    def list(self, **kw):
+                        class _R:
+                            def execute(self):
+                                return {"items": []}
+                        return _R()
+                return _C()
+
+        caption_id, lang = _pick_caption_track(_Service(), "abc", ["fr"])
+        self.assertIsNone(caption_id)
+        self.assertIsNone(lang)
 
 
 # --- 3) Endpoint POST /api/admin/quiz/generate-ai/ (IA-B6) -----------------

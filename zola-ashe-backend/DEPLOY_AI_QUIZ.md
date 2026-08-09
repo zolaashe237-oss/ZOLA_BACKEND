@@ -85,8 +85,9 @@ Sauvegarder (`Ctrl+O`, `Enter`, `Ctrl+X`).
 ## 4 · Build de l'image backend (~10-15 min)
 
 L'image inclut maintenant **6 packages IA/utilitaires** :
-`google-generativeai`, `pymupdf`, `youtube-transcript-api`, `python-docx`
-(mémoires Word), `google-api-python-client`.
+`google-generativeai`, `pymupdf`, `google-api-python-client`,
+`google-auth`, `google-auth-oauthlib` (OAuth YouTube captions),
+`python-docx` (mémoires Word).
 
 ```bash
 docker compose -f docker-compose.prod.yml build backend celery_worker celery_beat

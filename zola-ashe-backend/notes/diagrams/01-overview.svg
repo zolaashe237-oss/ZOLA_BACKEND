@@ -1,0 +1,83 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 620" font-family="system-ui, -apple-system, sans-serif">
+  <defs>
+    <marker id="arrow1" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#1F2937"/>
+    </marker>
+  </defs>
+  <rect width="100%" height="100%" fill="#FEFEFE"/>
+
+  <text x="480" y="34" font-size="22" font-weight="700" text-anchor="middle" fill="#6B1E2F">
+    Architecture — Extraction transcripts YouTube (OAuth 2.0)
+  </text>
+  <text x="480" y="56" font-size="13" text-anchor="middle" fill="#6B7280">
+    3 couches : Google Cloud (externe)  |  Configuration (.env)  |  Application Django (code)
+  </text>
+
+  <!-- Couche 1 : GCP -->
+  <rect x="40" y="80" width="880" height="140" rx="10" fill="#FEF3C7" stroke="#D97706" stroke-width="2"/>
+  <text x="60" y="106" font-size="15" font-weight="700" fill="#92400E">1. Google Cloud Platform (externe, une seule fois)</text>
+
+  <rect x="70" y="120" width="200" height="80" rx="6" fill="#FFFBEB" stroke="#D97706" stroke-width="1.5"/>
+  <text x="170" y="146" font-size="13" font-weight="600" text-anchor="middle" fill="#1F2937">Projet GCP</text>
+  <text x="170" y="166" font-size="11" text-anchor="middle" fill="#374151">zola-ashe-youtube</text>
+  <text x="170" y="184" font-size="11" text-anchor="middle" fill="#374151">+ API YouTube v3 activée</text>
+
+  <rect x="290" y="120" width="200" height="80" rx="6" fill="#FFFBEB" stroke="#D97706" stroke-width="1.5"/>
+  <text x="390" y="146" font-size="13" font-weight="600" text-anchor="middle" fill="#1F2937">OAuth Consent Screen</text>
+  <text x="390" y="166" font-size="11" text-anchor="middle" fill="#374151">Scope : youtube.force-ssl</text>
+  <text x="390" y="184" font-size="11" text-anchor="middle" fill="#DC2626">⚠ Publier (sinon exp. 7j)</text>
+
+  <rect x="510" y="120" width="200" height="80" rx="6" fill="#FFFBEB" stroke="#D97706" stroke-width="1.5"/>
+  <text x="610" y="146" font-size="13" font-weight="600" text-anchor="middle" fill="#1F2937">OAuth Client ID</text>
+  <text x="610" y="166" font-size="11" text-anchor="middle" fill="#374151">Type : Desktop app</text>
+  <text x="610" y="184" font-size="11" text-anchor="middle" fill="#374151">→ Client ID + Secret</text>
+
+  <rect x="730" y="120" width="180" height="80" rx="6" fill="#FFFBEB" stroke="#D97706" stroke-width="1.5"/>
+  <text x="820" y="146" font-size="13" font-weight="600" text-anchor="middle" fill="#1F2937">Refresh Token</text>
+  <text x="820" y="166" font-size="11" text-anchor="middle" fill="#374151">Généré via bootstrap</text>
+  <text x="820" y="184" font-size="11" text-anchor="middle" fill="#374151">Permanent (si publié)</text>
+
+  <!-- Couche 2 : Config .env -->
+  <rect x="40" y="250" width="880" height="130" rx="10" fill="#EDE9FE" stroke="#7C3AED" stroke-width="2"/>
+  <text x="60" y="276" font-size="15" font-weight="700" fill="#5B21B6">2. Configuration (.env local ET .env prod)</text>
+
+  <rect x="70" y="292" width="820" height="76" rx="6" fill="#F5F3FF" stroke="#7C3AED" stroke-width="1.5"/>
+  <text x="90" y="316" font-size="12" font-family="ui-monospace, monospace" fill="#1F2937">YOUTUBE_OAUTH_CLIENT_ID=&lt;xxx&gt;.apps.googleusercontent.com</text>
+  <text x="90" y="336" font-size="12" font-family="ui-monospace, monospace" fill="#1F2937">YOUTUBE_OAUTH_CLIENT_SECRET=GOCSPX-...</text>
+  <text x="90" y="356" font-size="12" font-family="ui-monospace, monospace" fill="#1F2937">YOUTUBE_OAUTH_REFRESH_TOKEN=1//...</text>
+
+  <!-- Couche 3 : Code Django -->
+  <rect x="40" y="410" width="880" height="190" rx="10" fill="#DCFCE7" stroke="#059669" stroke-width="2"/>
+  <text x="60" y="436" font-size="15" font-weight="700" fill="#065F46">3. Application Django (backend)</text>
+
+  <rect x="70" y="452" width="230" height="130" rx="6" fill="#F0FDF4" stroke="#059669" stroke-width="1.5"/>
+  <text x="185" y="475" font-size="13" font-weight="600" text-anchor="middle" fill="#1F2937">Extracteur</text>
+  <text x="185" y="493" font-size="10" font-family="ui-monospace, monospace" text-anchor="middle" fill="#374151">apps/ai_quiz/extractors/</text>
+  <text x="185" y="507" font-size="10" font-family="ui-monospace, monospace" text-anchor="middle" fill="#374151">youtube.py</text>
+  <text x="185" y="528" font-size="10" text-anchor="middle" fill="#065F46">extract_youtube_transcript()</text>
+  <text x="185" y="546" font-size="10" text-anchor="middle" fill="#065F46">+ helpers OAuth/SRT</text>
+  <text x="185" y="566" font-size="10" text-anchor="middle" fill="#6B7280">(le cœur du système)</text>
+
+  <rect x="320" y="452" width="230" height="130" rx="6" fill="#F0FDF4" stroke="#059669" stroke-width="1.5"/>
+  <text x="435" y="475" font-size="13" font-weight="600" text-anchor="middle" fill="#1F2937">Management command</text>
+  <text x="435" y="493" font-size="10" font-family="ui-monospace, monospace" text-anchor="middle" fill="#374151">apps/ai_quiz/management/</text>
+  <text x="435" y="507" font-size="10" font-family="ui-monospace, monospace" text-anchor="middle" fill="#374151">commands/</text>
+  <text x="435" y="521" font-size="10" font-family="ui-monospace, monospace" text-anchor="middle" fill="#374151">youtube_oauth_bootstrap.py</text>
+  <text x="435" y="546" font-size="10" text-anchor="middle" fill="#065F46">Génère le refresh token</text>
+  <text x="435" y="564" font-size="10" text-anchor="middle" fill="#6B7280">(à lancer 1× sur laptop)</text>
+
+  <rect x="570" y="452" width="320" height="130" rx="6" fill="#F0FDF4" stroke="#059669" stroke-width="1.5"/>
+  <text x="730" y="475" font-size="13" font-weight="600" text-anchor="middle" fill="#1F2937">3 callers du extractor</text>
+  <text x="580" y="498" font-size="11" font-family="ui-monospace, monospace" fill="#374151">• apps/ai_quiz/tasks.py</text>
+  <text x="580" y="515" font-size="10" fill="#6B7280">   (Celery, source_type=VIDEO_YOUTUBE)</text>
+  <text x="580" y="532" font-size="11" font-family="ui-monospace, monospace" fill="#374151">• apps/content/services.py</text>
+  <text x="580" y="549" font-size="10" fill="#6B7280">   (wrapper fail-silent → "")</text>
+  <text x="580" y="566" font-size="11" font-family="ui-monospace, monospace" fill="#374151">• apps/admin_api/views_content.py</text>
+
+  <!-- Flèches entre couches -->
+  <line x1="820" y1="200" x2="820" y2="248" stroke="#1F2937" stroke-width="2" marker-end="url(#arrow1)"/>
+  <text x="835" y="228" font-size="10" fill="#374151">copie dans</text>
+
+  <line x1="480" y1="380" x2="480" y2="408" stroke="#1F2937" stroke-width="2" marker-end="url(#arrow1)"/>
+  <text x="495" y="398" font-size="10" fill="#374151">lu par settings.py</text>
+</svg>
