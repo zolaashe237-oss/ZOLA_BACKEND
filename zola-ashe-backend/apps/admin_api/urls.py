@@ -11,6 +11,7 @@ from . import views_memoir as vmem
 from . import views_moderation as vmod
 from . import views_progression as vp
 from . import views_community as vcom
+from . import views_affiliate as vaff
 
 router = DefaultRouter()
 router.register("members", vm.MemberViewSet, basename="admin-member")
@@ -68,6 +69,12 @@ urlpatterns = [
 
     # Audit
     path("audit/", vmod.AuditLogListView.as_view(), name="admin-audit"),
+
+    # Affiliation & Parrainage
+    path("affiliate/config/",           vaff.AffiliateConfigView.as_view(),       name="admin-affiliate-config"),
+    path("affiliate/stats/",            vaff.AffiliateStatsView.as_view(),         name="admin-affiliate-stats"),
+    path("affiliate/referrals/",        vaff.AffiliateReferralListView.as_view(),  name="admin-affiliate-referrals"),
+    path("affiliate/referrals/pay/",    vaff.AffiliateMarkPaidView.as_view(),      name="admin-affiliate-pay"),
 
     # Progression des membres
     path("progression/kpis/", vp.ProgressionKpisView.as_view(), name="admin-progression-kpis"),
