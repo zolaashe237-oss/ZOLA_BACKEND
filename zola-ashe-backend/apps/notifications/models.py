@@ -29,18 +29,24 @@ class Notification(models.Model):
 
 
 class WhatsAppTemplate(models.Model):
-    """Modèle pour les messages WhatsApp prédéfinis (Twilio Content Templates)."""
-    name = models.CharField(max_length=128, unique=True, help_text="Nom du template chez Twilio")
+    """Modèle pour les messages WhatsApp prédéfinis (Twilio / Meta Cloud API)."""
+    name = models.CharField(max_length=128, unique=True,
+                            help_text="Nom du template (Twilio / Meta Cloud API)")
     slug = models.SlugField(max_length=128, unique=True, help_text="Identifiant logique pour le code")
     body = models.TextField(help_text="Corps du message avec placeholders {{1}}, {{2}}…")
     category = models.CharField(max_length=50, blank=True, default="UTILITY",
-                                help_text="Catégorie Twilio : MARKETING, UTILITY, AUTHENTICATION")
+                                help_text="Catégorie du template : MARKETING, UTILITY, AUTHENTICATION")
     language = models.CharField(max_length=10, default="fr", help_text="Code langue (fr, en…)")
     is_active = models.BooleanField(default=True)
     variables_count = models.PositiveIntegerField(default=0,
                                                   help_text="Nombre de variables/placeholders dans le template")
     twilio_template_sid = models.CharField(max_length=255, blank=True,
                                            help_text="Identifiant Twilio du Content Template (optionnel)")
+    meta_template_name = models.CharField(
+        max_length=128, blank=True,
+        help_text="Nom exact du template approuvé dans Meta WhatsApp Manager "
+                  "(par défaut, le slug est utilisé)",
+    )
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 

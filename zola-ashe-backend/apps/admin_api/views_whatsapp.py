@@ -81,7 +81,7 @@ class SendWhatsAppMessageView(generics.CreateAPIView):
     - `message` : texte libre (mode sans template)
     - `template_slug` : slug du template prédéfini (mode avec template)
     - `variables` : dict des variables à substituer (ex: {"1": "Jean", "2": "5000"})
-    - `provider` : force un provider (MOCK, TWILIO, EVOLUTION_API) — défaut = settings
+    - `provider` : force un provider (MOCK, TWILIO, EVOLUTION_API, META) — défaut = settings
     """
     serializer_class = SendWhatsAppMessageSerializer
     permission_classes = [IsAuthenticated, IsAdmin]

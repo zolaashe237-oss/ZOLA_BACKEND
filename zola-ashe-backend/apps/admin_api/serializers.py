@@ -676,7 +676,7 @@ class WhatsAppTemplateSerializer(serializers.ModelSerializer):
         model = WhatsAppTemplate
         fields = ("id", "name", "slug", "body", "category", "language",
                   "is_active", "variables_count", "twilio_template_sid",
-                  "created_at", "updated_at")
+                  "meta_template_name", "created_at", "updated_at")
         read_only_fields = ("id", "created_at", "updated_at")
 
 
@@ -689,7 +689,7 @@ class SendWhatsAppMessageSerializer(serializers.Serializer):
         child=serializers.CharField(), required=False, default=dict
     )
     provider = serializers.ChoiceField(
-        choices=["MOCK", "TWILIO", "EVOLUTION_API"],
+        choices=["MOCK", "TWILIO", "EVOLUTION_API", "META"],
         required=False, default=""
     )
 

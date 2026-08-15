@@ -297,6 +297,15 @@ EVOLUTION_API_URL = env("EVOLUTION_API_URL", default="")  # e.g., 'https://api.e
 EVOLUTION_API_KEY = env("EVOLUTION_API_KEY", default="")
 EVOLUTION_INSTANCE_NAME = env("EVOLUTION_INSTANCE_NAME", default="")
 
+# --- WhatsApp officiel Meta (WhatsApp Cloud API) -----------------------------
+# Doc : https://developers.facebook.com/docs/whatsapp/cloud-api
+# Le token est un "system user access token" permanent ; le Phone Number ID est
+# celui du numéro WhatsApp Business (WhatsApp Manager → API Setup).
+META_GRAPH_API_URL = env("META_GRAPH_API_URL", default="https://graph.facebook.com")
+META_API_VERSION = env("META_API_VERSION", default="v21.0")
+META_ACCESS_TOKEN = env("META_ACCESS_TOKEN", default="")
+META_PHONE_NUMBER_ID = env("META_PHONE_NUMBER_ID", default="")
+
 # Mode MOCK email : sans clé Brevo (dev/local), aucun email réel n'est envoyé
 # → on renvoie le code OTP dans la réponse API pour que le parcours d'inscription
 # / réinitialisation reste complet. Désactivé dès qu'une clé Brevo est fournie.
