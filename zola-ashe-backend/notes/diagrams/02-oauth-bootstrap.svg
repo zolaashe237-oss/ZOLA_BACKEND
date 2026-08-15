@@ -1,0 +1,122 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 960 680" font-family="system-ui, -apple-system, sans-serif">
+  <defs>
+    <marker id="arrow2" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#1F2937"/>
+    </marker>
+  </defs>
+  <rect width="100%" height="100%" fill="#FEFEFE"/>
+
+  <text x="480" y="34" font-size="22" font-weight="700" text-anchor="middle" fill="#6B1E2F">
+    Flux 1 — Bootstrap OAuth (générer le refresh_token)
+  </text>
+  <text x="480" y="56" font-size="13" text-anchor="middle" fill="#6B7280">
+    À exécuter UNE SEULE FOIS, sur ton laptop (nécessite un navigateur — impossible sur VPS)
+  </text>
+
+  <!-- Colonnes acteurs -->
+  <text x="130" y="90" font-size="13" font-weight="700" text-anchor="middle" fill="#1F2937">Toi (laptop)</text>
+  <text x="380" y="90" font-size="13" font-weight="700" text-anchor="middle" fill="#1F2937">Django command</text>
+  <text x="630" y="90" font-size="13" font-weight="700" text-anchor="middle" fill="#1F2937">Navigateur</text>
+  <text x="860" y="90" font-size="13" font-weight="700" text-anchor="middle" fill="#1F2937">Google OAuth</text>
+
+  <line x1="130" y1="100" x2="130" y2="640" stroke="#D1D5DB" stroke-width="1.5" stroke-dasharray="4,4"/>
+  <line x1="380" y1="100" x2="380" y2="640" stroke="#D1D5DB" stroke-width="1.5" stroke-dasharray="4,4"/>
+  <line x1="630" y1="100" x2="630" y2="640" stroke="#D1D5DB" stroke-width="1.5" stroke-dasharray="4,4"/>
+  <line x1="860" y1="100" x2="860" y2="640" stroke="#D1D5DB" stroke-width="1.5" stroke-dasharray="4,4"/>
+
+  <!-- Étape 1 : lancement commande -->
+  <rect x="30" y="120" width="200" height="60" rx="6" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.5"/>
+  <text x="130" y="140" font-size="11" font-weight="600" text-anchor="middle" fill="#1E3A8A">1. Lance la commande</text>
+  <text x="130" y="158" font-size="10" font-family="ui-monospace, monospace" text-anchor="middle" fill="#1F2937">python manage.py</text>
+  <text x="130" y="172" font-size="10" font-family="ui-monospace, monospace" text-anchor="middle" fill="#1F2937">youtube_oauth_bootstrap</text>
+
+  <line x1="230" y1="150" x2="280" y2="150" stroke="#1F2937" stroke-width="2" marker-end="url(#arrow2)"/>
+
+  <!-- Étape 2 : InstalledAppFlow -->
+  <rect x="280" y="120" width="200" height="60" rx="6" fill="#DCFCE7" stroke="#059669" stroke-width="1.5"/>
+  <text x="380" y="140" font-size="11" font-weight="600" text-anchor="middle" fill="#065F46">2. InstalledAppFlow</text>
+  <text x="380" y="158" font-size="10" text-anchor="middle" fill="#1F2937">Démarre serveur local</text>
+  <text x="380" y="172" font-size="10" text-anchor="middle" fill="#1F2937">http://localhost:8765/</text>
+
+  <!-- Étape 3 : Ouverture navigateur -->
+  <line x1="480" y1="150" x2="530" y2="150" stroke="#1F2937" stroke-width="2" marker-end="url(#arrow2)"/>
+  <rect x="530" y="120" width="200" height="60" rx="6" fill="#FEE2E2" stroke="#DC2626" stroke-width="1.5"/>
+  <text x="630" y="140" font-size="11" font-weight="600" text-anchor="middle" fill="#991B1B">3. Ouvre navigateur</text>
+  <text x="630" y="158" font-size="10" text-anchor="middle" fill="#1F2937">accounts.google.com/</text>
+  <text x="630" y="172" font-size="10" text-anchor="middle" fill="#1F2937">o/oauth2/auth?...</text>
+
+  <!-- Étape 4 : User consent -->
+  <line x1="730" y1="150" x2="780" y2="150" stroke="#1F2937" stroke-width="2" marker-end="url(#arrow2)"/>
+  <rect x="780" y="120" width="160" height="60" rx="6" fill="#FEF3C7" stroke="#D97706" stroke-width="1.5"/>
+  <text x="860" y="140" font-size="11" font-weight="600" text-anchor="middle" fill="#92400E">4. Google affiche</text>
+  <text x="860" y="158" font-size="10" text-anchor="middle" fill="#1F2937">Écran de consentement</text>
+  <text x="860" y="172" font-size="10" text-anchor="middle" fill="#1F2937">+ scope youtube.force-ssl</text>
+
+  <!-- Étape 5 : User accepte -->
+  <rect x="30" y="220" width="200" height="76" rx="6" fill="#DBEAFE" stroke="#2563EB" stroke-width="1.5"/>
+  <text x="130" y="240" font-size="11" font-weight="600" text-anchor="middle" fill="#1E3A8A">5. Tu sélectionnes</text>
+  <text x="130" y="258" font-size="10" text-anchor="middle" fill="#1F2937">le compte propriétaire</text>
+  <text x="130" y="272" font-size="10" text-anchor="middle" fill="#1F2937">de la chaîne YouTube</text>
+  <text x="130" y="288" font-size="10" text-anchor="middle" fill="#059669">→ Continue / Autoriser</text>
+
+  <path d="M 230,258 Q 500,258 780,180" fill="none" stroke="#1F2937" stroke-width="2" marker-end="url(#arrow2)"/>
+
+  <!-- Étape 6 : Google redirect -->
+  <rect x="780" y="320" width="160" height="76" rx="6" fill="#FEF3C7" stroke="#D97706" stroke-width="1.5"/>
+  <text x="860" y="340" font-size="11" font-weight="600" text-anchor="middle" fill="#92400E">6. Redirection</text>
+  <text x="860" y="358" font-size="10" text-anchor="middle" fill="#1F2937">http://localhost:8765/</text>
+  <text x="860" y="372" font-size="10" text-anchor="middle" fill="#1F2937">?code=&lt;authcode&gt;</text>
+  <text x="860" y="388" font-size="10" text-anchor="middle" fill="#6B7280">(code à usage unique)</text>
+
+  <path d="M 780,358 Q 530,358 480,240" fill="none" stroke="#1F2937" stroke-width="2" marker-end="url(#arrow2)"/>
+
+  <!-- Étape 7 : Exchange code -->
+  <rect x="280" y="220" width="200" height="76" rx="6" fill="#DCFCE7" stroke="#059669" stroke-width="1.5"/>
+  <text x="380" y="240" font-size="11" font-weight="600" text-anchor="middle" fill="#065F46">7. Capture le code</text>
+  <text x="380" y="258" font-size="10" text-anchor="middle" fill="#1F2937">Échange le code contre</text>
+  <text x="380" y="272" font-size="10" text-anchor="middle" fill="#1F2937">refresh_token +</text>
+  <text x="380" y="288" font-size="10" text-anchor="middle" fill="#1F2937">access_token</text>
+
+  <path d="M 480,258 Q 630,258 780,388" fill="none" stroke="#1F2937" stroke-width="2" marker-end="url(#arrow2)"/>
+
+  <!-- Étape 8 : Google renvoie tokens -->
+  <rect x="780" y="450" width="160" height="76" rx="6" fill="#FEF3C7" stroke="#D97706" stroke-width="1.5"/>
+  <text x="860" y="470" font-size="11" font-weight="600" text-anchor="middle" fill="#92400E">8. Google renvoie</text>
+  <text x="860" y="488" font-size="10" text-anchor="middle" fill="#1F2937">refresh_token (permanent)</text>
+  <text x="860" y="502" font-size="10" text-anchor="middle" fill="#1F2937">access_token (1h)</text>
+  <text x="860" y="518" font-size="10" text-anchor="middle" fill="#059669">(JSON POST /token)</text>
+
+  <path d="M 780,488 L 480,340" fill="none" stroke="#1F2937" stroke-width="2" marker-end="url(#arrow2)"/>
+
+  <!-- Étape 9 : Print refresh_token -->
+  <rect x="280" y="330" width="200" height="76" rx="6" fill="#DCFCE7" stroke="#059669" stroke-width="1.5"/>
+  <text x="380" y="350" font-size="11" font-weight="600" text-anchor="middle" fill="#065F46">9. Affiche dans stdout</text>
+  <text x="380" y="368" font-size="10" text-anchor="middle" fill="#1F2937">=== SUCCÈS ===</text>
+  <text x="380" y="382" font-size="10" font-family="ui-monospace, monospace" text-anchor="middle" fill="#1F2937">YOUTUBE_OAUTH_REFRESH_TOKEN=</text>
+  <text x="380" y="396" font-size="10" font-family="ui-monospace, monospace" text-anchor="middle" fill="#1F2937">1//0GEs...</text>
+
+  <line x1="280" y1="368" x2="230" y2="368" stroke="#1F2937" stroke-width="2" marker-end="url(#arrow2)"/>
+
+  <!-- Étape 10 : Copie dans .env -->
+  <rect x="30" y="340" width="200" height="100" rx="6" fill="#EDE9FE" stroke="#7C3AED" stroke-width="2"/>
+  <text x="130" y="362" font-size="11" font-weight="600" text-anchor="middle" fill="#5B21B6">10. Copie les 3 lignes</text>
+  <text x="130" y="382" font-size="10" text-anchor="middle" fill="#1F2937">dans .env local</text>
+  <text x="130" y="398" font-size="10" text-anchor="middle" fill="#1F2937">ET dans .env prod</text>
+  <text x="130" y="422" font-size="10" font-weight="600" text-anchor="middle" fill="#5B21B6">→ Bootstrap terminé</text>
+
+  <!-- Note importante -->
+  <rect x="30" y="500" width="910" height="120" rx="8" fill="#FEE2E2" stroke="#DC2626" stroke-width="2"/>
+  <text x="50" y="524" font-size="14" font-weight="700" fill="#991B1B">⚠ 2 pièges à connaître</text>
+  <text x="50" y="548" font-size="12" fill="#1F2937">
+    <tspan font-weight="600">1.</tspan>  Le refresh_token N'EST RETOURNÉ QU'UNE FOIS. Si tu perds les 3 lignes, il faut révoquer l'accès sur
+  </text>
+  <text x="50" y="566" font-size="12" fill="#1F2937">
+     myaccount.google.com/permissions puis relancer le bootstrap.
+  </text>
+  <text x="50" y="588" font-size="12" fill="#1F2937">
+    <tspan font-weight="600">2.</tspan>  Si l'OAuth consent screen est en mode « Testing », le refresh_token EXPIRE APRÈS 7 JOURS.
+  </text>
+  <text x="50" y="606" font-size="12" fill="#1F2937">
+     Impératif : publier l'app dans « In production » avant d'aller en prod (voir SETUP_YOUTUBE_OFFICIAL_API.md étape 3).
+  </text>
+</svg>

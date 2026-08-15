@@ -1,0 +1,166 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1050" font-family="'DejaVu Sans', 'Liberation Sans', Arial, sans-serif">
+  <defs>
+    <marker id="arr" markerWidth="12" markerHeight="12" refX="10" refY="4" orient="auto">
+      <path d="M0,0 L0,8 L10,4 z" fill="#1F2937"/>
+    </marker>
+    <marker id="arrBack" markerWidth="12" markerHeight="12" refX="10" refY="4" orient="auto">
+      <path d="M0,0 L0,8 L10,4 z" fill="#059669"/>
+    </marker>
+    <symbol id="check" viewBox="0 0 20 20">
+      <circle cx="10" cy="10" r="9" fill="#059669"/>
+      <path d="M5,10 L9,14 L15,7" stroke="white" stroke-width="2.5" fill="none" stroke-linecap="round" stroke-linejoin="round"/>
+    </symbol>
+    <symbol id="warn" viewBox="0 0 20 20">
+      <path d="M10,1 L19,18 L1,18 Z" fill="#D97706" stroke="#92400E" stroke-width="1"/>
+      <text x="10" y="16" font-size="13" font-weight="700" text-anchor="middle" fill="white">!</text>
+    </symbol>
+  </defs>
+  <rect width="100%" height="100%" fill="#FFFFFF"/>
+
+  <!-- ===================== TITRE ===================== -->
+  <text x="700" y="54" font-size="30" font-weight="700" text-anchor="middle" fill="#6B1E2F">
+    Role de Google Cloud Platform + Variables necessaires
+  </text>
+  <text x="700" y="84" font-size="17" text-anchor="middle" fill="#6B7280">
+    GCP = le portier entre le backend ZOLA ASHE et YouTube
+  </text>
+
+  <!-- ===================== SECTION 1 : LES 3 VARIABLES ===================== -->
+  <rect x="40" y="120" width="1320" height="200" rx="14" fill="#EDE9FE" stroke="#7C3AED" stroke-width="3"/>
+  <text x="700" y="160" font-size="22" font-weight="700" text-anchor="middle" fill="#5B21B6">
+    Les 3 variables a mettre dans .env (local + prod)
+  </text>
+
+  <!-- Variable 1 -->
+  <rect x="70" y="188" width="400" height="115" rx="10" fill="#FFFFFF" stroke="#7C3AED" stroke-width="2"/>
+  <text x="270" y="218" font-size="15" font-weight="700" text-anchor="middle" fill="#1F2937">YOUTUBE_OAUTH_CLIENT_ID</text>
+  <text x="270" y="244" font-size="14" text-anchor="middle" fill="#374151">Carte d'identite de l'app</text>
+  <text x="270" y="268" font-size="13" text-anchor="middle" fill="#6B7280">Source : Console GCP - Credentials</text>
+  <use href="#check" x="105" y="278" width="16" height="16"/>
+  <text x="270" y="292" font-size="13" font-weight="600" text-anchor="middle" fill="#059669">Stable, ne change pas</text>
+
+  <!-- Variable 2 -->
+  <rect x="500" y="188" width="400" height="115" rx="10" fill="#FFFFFF" stroke="#7C3AED" stroke-width="2"/>
+  <text x="700" y="218" font-size="15" font-weight="700" text-anchor="middle" fill="#1F2937">YOUTUBE_OAUTH_CLIENT_SECRET</text>
+  <text x="700" y="244" font-size="14" text-anchor="middle" fill="#374151">Mot de passe de l'app</text>
+  <text x="700" y="268" font-size="13" text-anchor="middle" fill="#6B7280">Source : Console GCP - Credentials</text>
+  <use href="#check" x="535" y="278" width="16" height="16"/>
+  <text x="700" y="292" font-size="13" font-weight="600" text-anchor="middle" fill="#059669">Stable, ne change pas</text>
+
+  <!-- Variable 3 -->
+  <rect x="930" y="188" width="400" height="115" rx="10" fill="#FFFFFF" stroke="#7C3AED" stroke-width="2"/>
+  <text x="1130" y="218" font-size="15" font-weight="700" text-anchor="middle" fill="#1F2937">YOUTUBE_OAUTH_REFRESH_TOKEN</text>
+  <text x="1130" y="244" font-size="14" text-anchor="middle" fill="#374151">Preuve de consentement humain</text>
+  <text x="1130" y="268" font-size="13" text-anchor="middle" fill="#6B7280">Source : bootstrap sur laptop</text>
+  <use href="#warn" x="915" y="277" width="16" height="16"/>
+  <text x="1130" y="292" font-size="13" font-weight="600" text-anchor="middle" fill="#D97706">7j si Testing / permanent si publie</text>
+
+  <!-- ===================== SECTION 2 : LES 3 ACTEURS ===================== -->
+
+  <!-- ─── Backend ─── -->
+  <rect x="40" y="360" width="340" height="380" rx="14" fill="#DBEAFE" stroke="#2563EB" stroke-width="3"/>
+  <text x="210" y="400" font-size="24" font-weight="700" text-anchor="middle" fill="#1E3A8A">Backend</text>
+  <text x="210" y="428" font-size="15" text-anchor="middle" fill="#1E3A8A">ZOLA ASHE (Django)</text>
+
+  <rect x="70" y="448" width="280" height="270" rx="10" fill="#FFFFFF" stroke="#2563EB" stroke-width="1.5"/>
+  <text x="210" y="478" font-size="17" font-weight="700" text-anchor="middle" fill="#1E3A8A">Ce qu'il possede</text>
+
+  <use href="#check" x="90" y="495" width="16" height="16"/>
+  <text x="115" y="509" font-size="15" fill="#374151">CLIENT_ID</text>
+  <use href="#check" x="90" y="525" width="16" height="16"/>
+  <text x="115" y="539" font-size="15" fill="#374151">CLIENT_SECRET</text>
+  <use href="#check" x="90" y="555" width="16" height="16"/>
+  <text x="115" y="569" font-size="15" fill="#374151">REFRESH_TOKEN</text>
+  <text x="115" y="595" font-size="13" fill="#6B7280" font-style="italic">(lus depuis .env)</text>
+
+  <line x1="90" y1="618" x2="330" y2="618" stroke="#93C5FD" stroke-width="1"/>
+
+  <text x="210" y="650" font-size="15" font-weight="600" text-anchor="middle" fill="#1E3A8A">Ce qu'il veut</text>
+  <text x="210" y="682" font-size="15" text-anchor="middle" fill="#059669">Le transcript</text>
+  <text x="210" y="702" font-size="15" text-anchor="middle" fill="#059669">d'une video YouTube</text>
+
+  <!-- ─── GCP ─── -->
+  <rect x="420" y="360" width="560" height="580" rx="16" fill="#FEF3C7" stroke="#D97706" stroke-width="4"/>
+  <text x="700" y="405" font-size="26" font-weight="700" text-anchor="middle" fill="#92400E">GOOGLE CLOUD PLATFORM</text>
+  <text x="700" y="432" font-size="16" text-anchor="middle" fill="#92400E">Le portier - 5 roles</text>
+
+  <!-- Role 1 -->
+  <rect x="450" y="450" width="500" height="80" rx="8" fill="#FFFFFF" stroke="#D97706" stroke-width="1.5"/>
+  <text x="470" y="476" font-size="16" font-weight="700" fill="#92400E">1 - Registre d'applications</text>
+  <text x="470" y="502" font-size="14" fill="#374151">Verifie que CLIENT_ID + SECRET sont connus</text>
+  <text x="470" y="520" font-size="13" fill="#6B7280">Reponse : "oui, c'est bien l'app ZOLA ASHE"</text>
+
+  <!-- Role 2 -->
+  <rect x="450" y="540" width="500" height="80" rx="8" fill="#FFFFFF" stroke="#D97706" stroke-width="1.5"/>
+  <text x="470" y="566" font-size="16" font-weight="700" fill="#92400E">2 - Serveur d'authentification OAuth</text>
+  <text x="470" y="592" font-size="14" fill="#374151">Echange REFRESH_TOKEN contre access_token (1h)</text>
+  <text x="470" y="610" font-size="13" font-family="'DejaVu Sans Mono', monospace" fill="#6B7280">oauth2.googleapis.com/token</text>
+
+  <!-- Role 3 -->
+  <rect x="450" y="630" width="500" height="80" rx="8" fill="#FFFFFF" stroke="#D97706" stroke-width="1.5"/>
+  <text x="470" y="656" font-size="16" font-weight="700" fill="#92400E">3 - Routeur vers YouTube Data API v3</text>
+  <text x="470" y="682" font-size="14" fill="#374151">Transmet captions.list / captions.download</text>
+  <text x="470" y="700" font-size="13" font-family="'DejaVu Sans Mono', monospace" fill="#6B7280">youtube.googleapis.com</text>
+
+  <!-- Role 4 -->
+  <rect x="450" y="720" width="500" height="80" rx="8" fill="#FFFFFF" stroke="#D97706" stroke-width="1.5"/>
+  <text x="470" y="746" font-size="16" font-weight="700" fill="#92400E">4 - Compteur de quotas</text>
+  <text x="470" y="772" font-size="14" fill="#374151">10 000 unites/jour  -  list=50  -  download=200</text>
+  <text x="470" y="790" font-size="13" fill="#6B7280">Depassement =&gt; HTTP 403 quotaExceeded</text>
+
+  <!-- Role 5 (highlighted) -->
+  <rect x="450" y="810" width="500" height="110" rx="8" fill="#FEE2E2" stroke="#DC2626" stroke-width="2"/>
+  <text x="470" y="836" font-size="16" font-weight="700" fill="#991B1B">5 - Controle de propriete (le point dur)</text>
+  <text x="470" y="862" font-size="14" fill="#374151">"Ce compte OAuth possede-t-il cette video ?"</text>
+  <text x="470" y="884" font-size="14" font-weight="700" fill="#DC2626">Si NON =&gt; HTTP 403 forbidden</text>
+  <text x="470" y="906" font-size="13" fill="#6B7280">Consequence : videos tierces bloquees (limite dure)</text>
+
+  <!-- ─── YouTube ─── -->
+  <rect x="1020" y="360" width="340" height="380" rx="14" fill="#DCFCE7" stroke="#059669" stroke-width="3"/>
+  <text x="1190" y="400" font-size="24" font-weight="700" text-anchor="middle" fill="#065F46">YouTube</text>
+  <text x="1190" y="428" font-size="15" text-anchor="middle" fill="#065F46">Base de donnees reelle</text>
+
+  <rect x="1050" y="448" width="280" height="270" rx="10" fill="#FFFFFF" stroke="#059669" stroke-width="1.5"/>
+  <text x="1190" y="478" font-size="17" font-weight="700" text-anchor="middle" fill="#065F46">Ce qu'il possede</text>
+
+  <use href="#check" x="1070" y="495" width="16" height="16"/>
+  <text x="1095" y="509" font-size="15" fill="#374151">Metadonnees videos</text>
+  <use href="#check" x="1070" y="525" width="16" height="16"/>
+  <text x="1095" y="539" font-size="15" fill="#374151">Pistes de sous-titres</text>
+  <use href="#check" x="1070" y="555" width="16" height="16"/>
+  <text x="1095" y="569" font-size="15" fill="#374151">Formats SRT / VTT / SBV</text>
+
+  <line x1="1070" y1="618" x2="1310" y2="618" stroke="#86EFAC" stroke-width="1"/>
+
+  <text x="1190" y="650" font-size="15" font-weight="600" text-anchor="middle" fill="#065F46">Comportement</text>
+  <text x="1190" y="682" font-size="15" text-anchor="middle" fill="#059669">Livre le SRT</text>
+  <text x="1190" y="702" font-size="15" text-anchor="middle" fill="#6B7280">si GCP dit OK</text>
+
+  <!-- Fleches Backend -> GCP -->
+  <line x1="384" y1="520" x2="418" y2="520" stroke="#1F2937" stroke-width="2.5" marker-end="url(#arr)"/>
+  <text x="401" y="510" font-size="12" text-anchor="middle" fill="#374151" font-weight="600">Requete</text>
+  <text x="401" y="540" font-size="12" text-anchor="middle" fill="#374151">+ 3 vars</text>
+
+  <!-- Fleche GCP -> YouTube -->
+  <line x1="982" y1="520" x2="1018" y2="520" stroke="#1F2937" stroke-width="2.5" marker-end="url(#arr)"/>
+  <text x="1000" y="510" font-size="12" text-anchor="middle" fill="#374151" font-weight="600">si tout</text>
+  <text x="1000" y="540" font-size="12" text-anchor="middle" fill="#374151">OK</text>
+
+  <!-- Fleche YouTube -> GCP (return) -->
+  <line x1="1018" y1="600" x2="982" y2="600" stroke="#059669" stroke-width="2.5" marker-end="url(#arrBack)"/>
+  <text x="1000" y="620" font-size="12" text-anchor="middle" fill="#065F46" font-weight="600">SRT</text>
+
+  <!-- Fleche GCP -> Backend (return) -->
+  <line x1="418" y1="600" x2="384" y2="600" stroke="#059669" stroke-width="2.5" marker-end="url(#arrBack)"/>
+  <text x="401" y="590" font-size="12" text-anchor="middle" fill="#065F46" font-weight="600">SRT texte</text>
+  <text x="401" y="622" font-size="12" text-anchor="middle" fill="#065F46">(ou erreur)</text>
+
+  <!-- ===================== SECTION 3 : SCENARIO EN 5 ETAPES ===================== -->
+  <rect x="40" y="970" width="1320" height="70" rx="12" fill="#F3F4F6" stroke="#6B7280" stroke-width="2"/>
+  <text x="700" y="998" font-size="18" font-weight="700" text-anchor="middle" fill="#1F2937">
+    Scenario type : 1 appel extract_youtube_transcript("https://youtu.be/ABC123")
+  </text>
+  <text x="700" y="1025" font-size="14" text-anchor="middle" fill="#374151">
+    1) Backend lit .env  =&gt;  2) GCP refresh access_token  =&gt;  3) captions.list  =&gt;  4) verif propriete  =&gt;  5) captions.download =&gt; SRT
+  </text>
+</svg>

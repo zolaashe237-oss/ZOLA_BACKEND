@@ -46,5 +46,6 @@ sentry-sdk>=2.0
 # --- IA (agent Gemini + extraction PDF/YouTube) ---
 google-generativeai>=0.8
 google-api-python-client>=2.140
-youtube-transcript-api>=0.6
+google-auth>=2.30
+google-auth-oauthlib>=1.2
 pymupdf>=1.24

@@ -18,11 +18,12 @@ from rest_framework_simplejwt.exceptions import InvalidToken, TokenError
 from rest_framework_simplejwt.tokens import RefreshToken
 from rest_framework_simplejwt.views import TokenRefreshView
 
-from .models import User, UserStatus
+from .models import GlobalSettings, User, UserStatus
 from .serializers import (
     DeleteAccountSerializer,
     EmailChangeConfirmSerializer,
     EmailChangeRequestSerializer,
+    GlobalSettingsSerializer,
     LoginSerializer,
     PasswordChangeSerializer,
     PasswordForgotSerializer,
@@ -500,3 +501,12 @@ class EmailChangeConfirmView(APIView):
         cache.delete(f"email_change:{user.id}")
 
         return Response({"detail": "Email mis à jour.", "email": pending_email})
+
+
+class GlobalSettingsView(APIView):
+    permission_classes = [AllowAny]
+    
+    def get(self, request):
+        settings = GlobalSettings.load()
+        serializer = GlobalSettingsSerializer(settings)
+        return Response(serializer.data)

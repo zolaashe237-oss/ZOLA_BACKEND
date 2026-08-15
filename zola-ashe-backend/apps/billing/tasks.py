@@ -52,6 +52,21 @@ def send_confirmation_email(email: str, kind: str,
     )
     msg.attach_alternative(html, "text/html")
     msg.send(fail_silently=False)
+
+    try:
+        from apps.accounts.models import User
+        from apps.notifications.whatsapp import WhatsAppService
+        user = User.objects.get(email=email)
+        if user.phone:
+            service = WhatsAppService()
+            service.send_template_message(
+                phone_number=user.phone,
+                template_slug="payment_confirmation",
+                variables={"libelle": libelle},
+            )
+    except Exception:
+        pass
+
     return f"confirmation sent: {email} ({kind})"
 
 

@@ -13,7 +13,7 @@ from rest_framework.response import Response
 
 from apps.admin_api.permissions import IsAdmin
 
-from .gemini_client import AIGenerationError, generate_json
+from .gemini_client import AIConfigError, AIGenerationError, generate_json
 from .models import (
     AIQROAnswer,
     AIQuestion,
@@ -82,7 +82,21 @@ class GenerateQuizView(GenericAPIView):
             created_by=request.user,
             status=JobStatus.PENDING,
         )
-        generate_quiz_task.delay(str(job.id))
+        try:
+            generate_quiz_task.delay(str(job.id))
+        except Exception as exc:
+            logger.exception("generate_quiz_task.delay failed job=%s", job.id)
+            job.status = JobStatus.FAILED
+            job.error_message = f"File d'attente indisponible : {exc}"[:2000]
+            job.finished_at = timezone.now()
+            job.save(update_fields=["status", "error_message", "finished_at"])
+            return Response(
+                {
+                    "detail": "File d'attente Celery indisponible, réessayer plus tard.",
+                    "job_id": str(job.id),
+                },
+                status=status.HTTP_503_SERVICE_UNAVAILABLE,
+            )
 
         return Response(
             AIQuizJobSerializer(job).data,
@@ -216,8 +230,15 @@ def _evaluate_qro(
     try:
         raw = generate_json(prompt, schema=QRO_EVALUATION_SCHEMA)
         parsed = validate_qro_evaluation_output(raw)
-    except (AIGenerationError, PromptValidationError) as exc:
+    except (AIConfigError, AIGenerationError, PromptValidationError) as exc:
         logger.warning("qro.eval.fail → %s", exc)
+        return (
+            QROVerdict.NEEDS_REVIEW,
+            0,
+            "Correction automatique indisponible, un correcteur va trancher.",
+        )
+    except Exception as exc:
+        logger.exception("qro.eval.unexpected → %s", exc)
         return (
             QROVerdict.NEEDS_REVIEW,
             0,

@@ -30,9 +30,17 @@ TEST_SETTINGS = dict(
 )
 
 
+_FORMATION_COUNTER = 0
+
+
 def make_formation(**kw) -> Formation:
-    defaults = dict(title="Formation", category=Category.FORMATION,
-                    status=FormationStatus.PUBLISHED, access_subscription_types=["MEMBRE"])
+    global _FORMATION_COUNTER
+    _FORMATION_COUNTER += 1
+    defaults = dict(title=f"Formation {_FORMATION_COUNTER}",
+                    slug=f"formation-{_FORMATION_COUNTER}",
+                    category=Category.FORMATION,
+                    status=FormationStatus.PUBLISHED,
+                    access_subscription_types=["MEMBRE"])
     defaults.update(kw)
     return Formation.objects.create(**defaults)
 
@@ -67,21 +75,37 @@ class FormationAccessTests(APITestCase):
         self.reserve = make_formation(title="Réservé", access_subscription_types=["MEMBRE"])
         self.public = make_formation(title="Public", access_subscription_types=[])
 
-    def _locked(self, user, formation):
+    def _fetch(self, user, formation):
+        """Retourne (status_code, locked). locked=True si 404 (cachée) ou locked=True."""
         self.client.force_authenticate(user)
-        return self.client.get(f"/api/formations/{formation.id}/").data["locked"]
+        r = self.client.get(f"/api/formations/{formation.id}/")
+        if r.status_code == 404:
+            return 404, True
+        return r.status_code, r.data["locked"]
 
     def test_reserved_active_member_only(self):
-        self.assertFalse(self._locked(self.actif, self.reserve))
-        self.assertTrue(self._locked(self.restreint, self.reserve))
+        # ACTIF : formation MEMBRE visible + accessible
+        code, locked = self._fetch(self.actif, self.reserve)
+        self.assertEqual(code, 200)
+        self.assertFalse(locked)
+        # RESTREINT : branch MEMBRE exclue du queryset → 404
+        code, _ = self._fetch(self.restreint, self.reserve)
+        self.assertEqual(code, 404)
 
     def test_public_open_to_any_non_blocked(self):
-        self.assertFalse(self._locked(self.actif, self.public))
-        self.assertFalse(self._locked(self.restreint, self.public))
+        # ACTIF : formation ouverte visible et accessible
+        code, locked = self._fetch(self.actif, self.public)
+        self.assertEqual(code, 200)
+        self.assertFalse(locked)
+        # RESTREINT : la formation "ouverte" a branch=MEMBRE par défaut → 404 aussi
+        # (nouveau contrat : la branch est un filtre top-niveau, indépendant de access_subscription_types)
+        code, _ = self._fetch(self.restreint, self.public)
+        self.assertEqual(code, 404)
 
     def test_blocked_no_access(self):
-        self.assertTrue(self._locked(self.bloque, self.reserve))
-        self.assertTrue(self._locked(self.bloque, self.public))  # RG-10
+        # BLOQUE ne voit aucune formation (RG-10 : branch MEMBRE exclue, aucune access_level)
+        self.assertEqual(self._fetch(self.bloque, self.reserve)[0], 404)
+        self.assertEqual(self._fetch(self.bloque, self.public)[0], 404)
 
 
 @override_settings(**TEST_SETTINGS)
