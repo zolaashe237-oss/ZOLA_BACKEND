@@ -36,10 +36,15 @@ END $$;
 CREATE INDEX IF NOT EXISTS formations_branch_level_idx ON formations (branch, level);
 """
 
+def apply_repair_if_postgres(apps, schema_editor):
+    if schema_editor.connection.vendor == 'postgresql':
+        with schema_editor.connection.cursor() as cursor:
+            cursor.execute(REPAIR_SQL)
+
 
 class Migration(migrations.Migration):
     dependencies = [("content", "0004_audio_librarypdf_and_more")]
 
     operations = [
-        migrations.RunSQL(sql=REPAIR_SQL, reverse_sql=migrations.RunSQL.noop),
+        migrations.RunPython(apply_repair_if_postgres, reverse_code=migrations.RunPython.noop),
     ]

@@ -65,6 +65,7 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
+    "apps.content.middleware.SequentialCourseAccessMiddleware",
 ]
 
 ROOT_URLCONF = "config.urls"
@@ -144,7 +145,7 @@ AUTH_PASSWORD_VALIDATORS = [
 ]
 
 # --- DRF & JWT --------------------------------------------------------------
-import sys
+import sys  # noqa: E402
 IS_TESTING = "test" in sys.argv
 
 REST_FRAMEWORK = {
@@ -231,8 +232,18 @@ SIMPLE_JWT = {
 ADMIN_ACCESS_TOKEN_LIFETIME = timedelta(hours=4)    # session admin courte (CDC §5.1)
 
 # --- CORS / CSRF (frontend Next.js) -----------------------------------------
-CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=["http://localhost:3000"])
-CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=["http://localhost:3000"])
+CUSTOM_DOMAINS = [
+    "https://zola-ashe.com",
+    "https://www.zola-ashe.com",
+    "https://dashboard.zola-ashe.com"
+]
+CORS_ALLOWED_ORIGINS = env.list("CORS_ALLOWED_ORIGINS", default=["http://localhost:3000"]) + CUSTOM_DOMAINS
+CSRF_TRUSTED_ORIGINS = env.list("CSRF_TRUSTED_ORIGINS", default=["http://localhost:3000"]) + ["https://*.vercel.app"] + CUSTOM_DOMAINS
+
+CORS_ALLOWED_ORIGIN_REGEXES = [
+    r"^https://.*\.vercel\.app$",
+]
+
 # Les frontends envoient le cookie refresh (axios withCredentials) → le navigateur
 # exige Access-Control-Allow-Credentials: true, sinon il bloque TOUTE réponse (login compris).
 CORS_ALLOW_CREDENTIALS = True
@@ -241,7 +252,10 @@ CORS_ALLOW_CREDENTIALS = True
 USE_S3 = env.bool("USE_S3", default=False)
 if USE_S3:
     STORAGES = {
-        "default": {"BACKEND": "storages.backends.s3.S3Storage"},
+        # Storage custom : les URLs signées pointent sur S3_PUBLIC_ENDPOINT_URL
+        # (nginx public), tandis que les uploads passent par AWS_S3_ENDPOINT_URL
+        # (interne minio:9000). Voir config/storages.py.
+        "default": {"BACKEND": "config.storages.PublicSignedS3Storage"},
         "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
     }
     AWS_ACCESS_KEY_ID = env("R2_ACCESS_KEY_ID")
@@ -273,6 +287,16 @@ EMAIL_HOST_USER = env("BREVO_SMTP_USER", default="")
 EMAIL_HOST_PASSWORD = env("BREVO_SMTP_KEY", default="")
 DEFAULT_FROM_EMAIL = env("DEFAULT_FROM_EMAIL", default="no-reply@zola-ashe.com")
 BREVO_API_KEY = env("BREVO_API_KEY", default="")
+
+# --- WhatsApp Notifications -------------------------------------------------
+WHATSAPP_PROVIDER = env("WHATSAPP_PROVIDER", default="MOCK")  # MOCK, TWILIO, EVOLUTION_API
+TWILIO_ACCOUNT_SID = env("TWILIO_ACCOUNT_SID", default="")
+TWILIO_AUTH_TOKEN = env("TWILIO_AUTH_TOKEN", default="")
+TWILIO_WHATSAPP_NUMBER = env("TWILIO_WHATSAPP_NUMBER", default="")  # e.g., 'whatsapp:+14155238886'
+
+EVOLUTION_API_URL = env("EVOLUTION_API_URL", default="")  # e.g., 'https://api.evolution.com'
+EVOLUTION_API_KEY = env("EVOLUTION_API_KEY", default="")
+EVOLUTION_INSTANCE_NAME = env("EVOLUTION_INSTANCE_NAME", default="")
 
 # Mode MOCK email : sans clé Brevo (dev/local), aucun email réel n'est envoyé
 # → on renvoie le code OTP dans la réponse API pour que le parcours d'inscription
@@ -330,7 +354,10 @@ STATIC_ROOT = BASE_DIR / "staticfiles"
 
 # En prod, USE_S3=True → les médias vivent sur R2 (URLs signées). Le stockage
 # local ci-dessous ne sert qu'au développement sans R2.
-MEDIA_URL = "media/"
+# Slash initial obligatoire : sans lui, `default_storage.url()` renvoie une URL
+# relative que les serializers ne convertissent pas en absolue (build_absolute_uri
+# ne s'applique que sur les chemins commençant par "/").
+MEDIA_URL = "/media/"
 MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
@@ -344,6 +371,15 @@ GEMINI_TIMEOUT_S = env.int("GEMINI_TIMEOUT_S", default=60)
 GEMINI_MAX_RETRIES = env.int("GEMINI_MAX_RETRIES", default=2)
 AI_ENABLED = env.bool("AI_ENABLED", default=True)
 YOUTUBE_API_KEY = env("YOUTUBE_API_KEY", default="")
+
+# --- YouTube Data API v3 (OAuth 2.0) ----------------------------------------
+# Extraction officielle des transcriptions. Le compte OAuth doit être
+# propriétaire des vidéos ciblées (captions.download refuse les vidéos
+# tierces). Bootstrap : `python manage.py youtube_oauth_bootstrap`.
+# Voir SETUP_YOUTUBE_OFFICIAL_API.md pour la préparation GCP.
+YOUTUBE_OAUTH_CLIENT_ID = env("YOUTUBE_OAUTH_CLIENT_ID", default="")
+YOUTUBE_OAUTH_CLIENT_SECRET = env("YOUTUBE_OAUTH_CLIENT_SECRET", default="")
+YOUTUBE_OAUTH_REFRESH_TOKEN = env("YOUTUBE_OAUTH_REFRESH_TOKEN", default="")
 
 # --- Logging ----------------------------------------------------------------
 LOGGING = {
@@ -367,5 +403,9 @@ LOGGING = {
             "level": env("AI_LOG_LEVEL", default="INFO"),
             "propagate": False,
         },
+    },
+    "root": {
+        "handlers": ["console"],
+        "level": "INFO",
     },
 }

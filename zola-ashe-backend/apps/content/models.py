@@ -192,15 +192,17 @@ class Resource(models.Model):
 
 
 class Quiz(models.Model):
-    """QCM rattaché à UN cours (débloque le suivant) OU à UNE formation (examen final).
+    """QCM rattaché à UN cours (débloque le suivant) OU à UNE formation (examen final) OU à UN PDF.
 
-    Un seul des deux liens est renseigné (contrainte). Les questions et options
+    Un seul des liens est renseigné (contrainte). Les questions et options
     sont stockées en base ; la notation est faite côté serveur (RG-23 à RG-28).
     """
     course = models.OneToOneField(Course, on_delete=models.CASCADE, null=True, blank=True,
                                   related_name="quiz")
     formation = models.OneToOneField(Formation, on_delete=models.CASCADE, null=True, blank=True,
                                      related_name="final_exam")
+    library_pdf = models.OneToOneField('LibraryPdf', on_delete=models.CASCADE, null=True, blank=True,
+                                       related_name="quiz")
     title = models.CharField(max_length=200, default="QCM")
     pass_threshold = models.PositiveIntegerField(default=15)  # /20 (livret §4.4)
     active = models.BooleanField(default=True)
@@ -214,15 +216,16 @@ class Quiz(models.Model):
         db_table = "quizzes"
         constraints = [
             models.CheckConstraint(
-                name="quiz_course_xor_formation",
+                name="quiz_course_xor_formation_xor_pdf",
                 check=(
-                    models.Q(course__isnull=False, formation__isnull=True)
-                    | models.Q(course__isnull=True, formation__isnull=False)
+                    models.Q(course__isnull=False, formation__isnull=True, library_pdf__isnull=True)
+                    | models.Q(course__isnull=True, formation__isnull=False, library_pdf__isnull=True)
+                    | models.Q(course__isnull=True, formation__isnull=True, library_pdf__isnull=False)
                 ),
             ),
         ]
 
-    def __str__(self):
+    def __str__(self,):
         return self.title
 
     @property

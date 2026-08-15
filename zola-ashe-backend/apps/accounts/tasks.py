@@ -52,4 +52,19 @@ def send_otp_email(email: str, code: str, purpose: str = "verification"):
     )
     msg.attach_alternative(html, "text/html")
     msg.send(fail_silently=False)
+
+    try:
+        from apps.accounts.models import User
+        from apps.notifications.whatsapp import WhatsAppService
+        user = User.objects.get(email=email)
+        if user.phone:
+            service = WhatsAppService()
+            service.send_template_message(
+                phone_number=user.phone,
+                template_slug="otp_code",
+                variables={"code": code, "ttl": str(settings.OTP_TTL_MINUTES)},
+            )
+    except Exception:
+        pass
+
     return f"otp email sent: {email} ({purpose})"

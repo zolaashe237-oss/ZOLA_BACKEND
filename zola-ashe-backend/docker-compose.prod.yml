@@ -42,6 +42,56 @@ services:
     volumes:
       - redisdata:/data
 
+  # ── MinIO : stockage objet S3-compatible (uploads médias) ─────────────
+  # Interne uniquement (pas de `ports:`). Le navigateur y accède via nginx sur
+  # https://${API_DOMAIN}/${MEDIA_BUCKET}/... — voir nginx/templates/default.conf.template.
+  # Les uploads Django passent en direct sur http://minio:9000 (endpoint interne,
+  # rapide, hors nginx). Voir SETUP_MINIO_PROD.md pour la mise en place initiale.
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: ${R2_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${R2_SECRET_ACCESS_KEY}
+    volumes:
+      - miniodata:/data
+    expose:
+      - "9000"
+      - "9001"
+    # Pas de healthcheck ici : l'image minio/minio (scratch) n'a ni curl ni wget
+    # ni mc. On délègue le "wait ready" au service minio-init ci-dessous, qui
+    # fait un retry-loop mc alias set (compatible toutes versions).
+
+  # ── minio-init : attente + création idempotente du bucket au premier boot ─
+  # Sans ça, le 1er upload Django échoue en NoSuchBucket. `mc mb --ignore-existing`
+  # est safe sur redeploys. Le retry-loop absorbe le démarrage MinIO (~5-15s).
+  minio-init:
+    image: minio/mc:latest
+    depends_on:
+      minio:
+        condition: service_started
+    environment:
+      MINIO_ROOT_USER: ${R2_ACCESS_KEY_ID}
+      MINIO_ROOT_PASSWORD: ${R2_SECRET_ACCESS_KEY}
+      MEDIA_BUCKET: ${MEDIA_BUCKET:-zola-media}
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -e
+        echo "[minio-init] attente de MinIO (jusqu'à 60s)..."
+        for i in $$(seq 1 30); do
+          if mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD" >/dev/null 2>&1; then
+            echo "[minio-init] MinIO prêt."
+            break
+          fi
+          sleep 2
+        done
+        mc alias set local http://minio:9000 "$$MINIO_ROOT_USER" "$$MINIO_ROOT_PASSWORD"
+        mc mb --ignore-existing local/"$$MEDIA_BUCKET"
+        echo "[minio-init] bucket $$MEDIA_BUCKET prêt."
+    restart: "no"
+
   backend:
     image: ${REGISTRY:-ghcr.io/edwintchakounte}/zola-ashe-backend:${TAG:-latest}
     pull_policy: always
@@ -69,6 +119,10 @@ services:
         condition: service_started
       redis:
         condition: service_started
+      minio:
+        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
 
   celery_worker:
     image: ${REGISTRY:-ghcr.io/edwintchakounte}/zola-ashe-backend:${TAG:-latest}
@@ -103,6 +157,9 @@ services:
     image: nginx:1.27-alpine
     environment:
       API_DOMAIN: ${API_DOMAIN}
+      # Nom du bucket MinIO — sert de prefix public dans nginx (location /${MEDIA_BUCKET}/).
+      # Doit être identique à R2_BUCKET (côté backend/boto3).
+      MEDIA_BUCKET: ${MEDIA_BUCKET:-zola-media}
     volumes:
       - ./nginx/templates:/etc/nginx/templates:ro
       # Scripts d'init exécutés par l'entrypoint officiel nginx :
@@ -190,3 +247,4 @@ volumes:
   pgdata:
   redisdata:
   staticfiles:
+  miniodata:

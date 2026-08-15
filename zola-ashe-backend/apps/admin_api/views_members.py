@@ -78,11 +78,13 @@ class MemberViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
                    request=ReasonSerializer, responses={200: _StatusResponse})
     @action(detail=True, methods=["post"])
     def block(self, request, pk=None):
+        from apps.admin_api.tasks import send_block_notification
         user = self.get_object()
         reason = request.data.get("reason", "")
         user.set_status(UserStatus.BLOQUE)
         _revoke_tokens(user)
         record(request.user, AuditAction.BLOCK_USER, target_type="User", target_id=user.id, reason=reason)
+        send_block_notification.delay(user.id, reason)
         return Response({"status": user.status})
 
     @extend_schema(tags=["Admin · Membres"], summary="Débloquer un membre",

@@ -13,6 +13,42 @@ logger = logging.getLogger("memoir")
 
 from .models import DraftStatus, MemoirDraft
 from .serializers import MemoirDraftSerializer
+import os
+import requests
+
+
+class AssemblyAITokenView(APIView):
+    """GET → génère un jeton temporaire AssemblyAI."""
+
+    permission_classes = [IsAuthenticated]
+
+    @extend_schema(
+        responses={
+            200: OpenApiResponse(description="{'token': '...'}"),
+            500: OpenApiResponse(description="Erreur AssemblyAI"),
+        },
+        summary="Générer un jeton AssemblyAI pour la transcription en temps réel",
+    )
+    def get(self, request):
+        api_key = os.environ.get("ASSEMBLYAI_API_KEY", "dummy_key")
+        headers = {"Authorization": api_key, "Content-Type": "application/json"}
+        try:
+            response = requests.post(
+                "https://api.assemblyai.com/v2/realtime/token",
+                json={"expires_in": 3600},
+                headers=headers,
+                timeout=5
+            )
+            response.raise_for_status()
+            data = response.json()
+            return Response({"token": data.get("token")})
+        except Exception as exc:
+            logger.exception("Erreur lors de la génération du token AssemblyAI")
+            return Response(
+                {"detail": "Impossible de générer le jeton de transcription."},
+                status=status.HTTP_500_INTERNAL_SERVER_ERROR
+            )
+
 
 
 class MemoirDraftView(APIView):
