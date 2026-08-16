@@ -194,6 +194,105 @@ class EvolutionAPIProvider(WhatsAppProvider):
         return self.send_text(phone_number, body)
 
 
+class MetaProvider(WhatsAppProvider):
+    """Provider officiel Meta — WhatsApp Cloud API (Graph API)."""
+
+    def __init__(self) -> None:
+        self.base_url = getattr(settings, "META_GRAPH_API_URL",
+                                "https://graph.facebook.com").rstrip("/")
+        self.api_version = getattr(settings, "META_API_VERSION", "v21.0")
+        self.access_token = getattr(settings, "META_ACCESS_TOKEN", "")
+        self.phone_number_id = getattr(settings, "META_PHONE_NUMBER_ID", "")
+
+    def _check_credentials(self) -> bool:
+        if not self.access_token or not self.phone_number_id:
+            logger.error(
+                "Identifiants Meta manquants (META_ACCESS_TOKEN / META_PHONE_NUMBER_ID)."
+            )
+            return False
+        return True
+
+    def _post(self, payload: dict) -> bool:
+        url = f"{self.base_url}/{self.api_version}/{self.phone_number_id}/messages"
+        headers = {
+            "Authorization": f"Bearer {self.access_token}",
+            "Content-Type": "application/json",
+        }
+        try:
+            response = requests.post(url, json=payload, headers=headers, timeout=10)
+            if response.status_code in [200, 201]:
+                return True
+            logger.error("Erreur Meta %d: %s", response.status_code, response.text)
+            return False
+        except requests.RequestException:
+            logger.exception("Échec de la requête réseau Meta")
+            return False
+
+    def send_text(self, phone_number: str, message: str, **kwargs: Any) -> bool:
+        """
+        Envoi sans template — uniquement pour répondre à une conversation
+        initiée par le client (fenêtre de 24h).
+        """
+        if not self._check_credentials():
+            return False
+
+        payload = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": _clean_phone(phone_number),
+            "type": "text",
+            "text": {"preview_url": False, "body": message},
+        }
+        success = self._post(payload)
+        if success:
+            logger.info("Message texte WhatsApp envoyé via Meta à %s", phone_number)
+        return success
+
+    def send_template(self, phone_number: str, template_slug: str,
+                      variables: dict[str, str] | None = None, **kwargs: Any) -> bool:
+        """
+        Envoi via un template Meta approuvé — obligatoire pour les
+        conversations initiées par le business.
+        """
+        if not self._check_credentials():
+            return False
+
+        from apps.notifications.models import WhatsAppTemplate
+        try:
+            tmpl = WhatsAppTemplate.objects.get(slug=template_slug, is_active=True)
+        except WhatsAppTemplate.DoesNotExist:
+            logger.error("Template WhatsApp '%s' introuvable ou inactif.", template_slug)
+            return False
+
+        # Le template est identifié par son NOM exact chez Meta (ex: otp_code),
+        # pas par un SID. meta_template_name permet de déroger au slug.
+        template_name = tmpl.meta_template_name or tmpl.slug
+
+        payload: dict[str, Any] = {
+            "messaging_product": "whatsapp",
+            "recipient_type": "individual",
+            "to": _clean_phone(phone_number),
+            "type": "template",
+            "template": {
+                "name": template_name,
+                "language": {"code": tmpl.language},
+                "components": [],
+            },
+        }
+
+        parameters = _build_meta_parameters(variables or {})
+        if parameters:
+            payload["template"]["components"].append(
+                {"type": "body", "parameters": parameters}
+            )
+
+        success = self._post(payload)
+        if success:
+            logger.info("Message template WhatsApp envoyé via Meta à %s (template: %s)",
+                        phone_number, template_slug)
+        return success
+
+
 # ─── Utilitaires ─────────────────────────────────────────────────────────────
 
 def _render_template_body(template_body: str, variables: dict[str, str]) -> str:
@@ -204,10 +303,29 @@ def _render_template_body(template_body: str, variables: dict[str, str]) -> str:
     return result
 
 
+def _build_meta_parameters(variables: dict[str, str]) -> list[dict[str, str]]:
+    """Convertit un dict de variables en paramètres positionnels Meta.
+
+    Les clés numériques ("1", "2"…) sont triées dans l'ordre numérique ;
+    les clés nommées passent ensuite par ordre alphabétique.
+    """
+    def _sort_key(item: tuple[str, str]) -> tuple[int, str]:
+        key, _ = item
+        if key.isdigit():
+            return (0, key.zfill(6))  # tri numérique stable (2 < 10)
+        return (1, key)
+
+    return [
+        {"type": "text", "text": str(value)}
+        for _, value in sorted(variables.items(), key=_sort_key)
+    ]
+
+
 _PROVIDER_MAP: dict[str, type[WhatsAppProvider]] = {
     "MOCK": MockProvider,
     "TWILIO": TwilioProvider,
     "EVOLUTION_API": EvolutionAPIProvider,
+    "META": MetaProvider,
 }
 
 
