@@ -13,7 +13,6 @@ from .serializers import (
     WhatsAppTemplateSerializer,
 )
 
-
 # ─── CRUD Templates WhatsApp ─────────────────────────────────────────────────
 
 class WhatsAppTemplateListCreateView(generics.ListCreateAPIView):
