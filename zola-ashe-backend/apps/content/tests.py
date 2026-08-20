@@ -260,3 +260,142 @@ class ScheduledPublicationTests(APITestCase):
         self.assertEqual(due.status, FormationStatus.PUBLISHED)
         self.assertIsNone(due.publish_at)
         self.assertEqual(future.status, FormationStatus.SCHEDULED)
+
+
+@override_settings(**TEST_SETTINGS)
+class BrancheContentAccessTests(APITestCase):
+    """Flow complet accès contenu par branche (Audio / LibraryPdf standalone)."""
+
+    def setUp(self):
+        from .models import Audio, LibraryPdf
+        self.femme_member = User.objects.create_user(
+            "f@z.com", "Passw0rd!", full_name="F",
+            email_verified=True, status=UserStatus.ACTIF, access_levels=["FEMME"])
+        self.plain_member = User.objects.create_user(
+            "p@z.com", "Passw0rd!", full_name="P",
+            email_verified=True, status=UserStatus.ACTIF, access_levels=[])
+        self.pdf_public = LibraryPdf.objects.create(
+            title="Pdf public", bucket_key="pdfs/public.pdf",
+            access_level="PUBLIC", is_active=True)
+        self.pdf_femme = LibraryPdf.objects.create(
+            title="Pdf femme", bucket_key="pdfs/femme.pdf",
+            access_level="FEMME", is_active=True)
+        self.audio_femme = Audio.objects.create(
+            title="Audio femme", bucket_key="audios/femme.mp3",
+            access_level="FEMME", is_active=True)
+
+    def test_femme_member_lists_and_streams_femme_pdf(self):
+        self.client.force_authenticate(self.femme_member)
+        r = self.client.get("/api/library/")
+        titles = [item["title"] for item in r.data]
+        self.assertIn("Pdf femme", titles)
+        self.assertIn("Pdf public", titles)
+        # stream OK
+        stream = self.client.get(f"/api/library/{self.pdf_femme.id}/stream/")
+        self.assertEqual(stream.status_code, 200)
+
+    def test_plain_member_does_not_see_femme_pdf(self):
+        self.client.force_authenticate(self.plain_member)
+        r = self.client.get("/api/library/")
+        titles = [item["title"] for item in r.data]
+        self.assertNotIn("Pdf femme", titles)
+        self.assertIn("Pdf public", titles)
+        # stream direct : 404 car le queryset filtre en amont
+        stream = self.client.get(f"/api/library/{self.pdf_femme.id}/stream/")
+        self.assertEqual(stream.status_code, 404)
+
+    def test_femme_member_lists_femme_audio(self):
+        self.client.force_authenticate(self.femme_member)
+        r = self.client.get("/api/audio/")
+        titles = [item["title"] for item in r.data]
+        self.assertIn("Audio femme", titles)
+
+    def test_plain_member_does_not_see_femme_audio(self):
+        self.client.force_authenticate(self.plain_member)
+        r = self.client.get("/api/audio/")
+        titles = [item["title"] for item in r.data]
+        self.assertNotIn("Audio femme", titles)
+
+
+@override_settings(**TEST_SETTINGS)
+class AccessConsistencyAuditTests(APITestCase):
+    """Audit inter-flow : la règle d'accès aux branches doit être identique
+    sur formations, audios, PDFs et lives — quel que soit le statut."""
+
+    def setUp(self):
+        from .models import Audio, LibraryPdf, LiveSession
+        self.actif_femme = User.objects.create_user(
+            "af@z.com", "Passw0rd!", full_name="AF",
+            email_verified=True, status=UserStatus.ACTIF, access_levels=["FEMME"])
+        self.restreint_femme = User.objects.create_user(
+            "rf@z.com", "Passw0rd!", full_name="RF",
+            email_verified=True, status=UserStatus.RESTREINT, access_levels=["FEMME"])
+        self.bloque_femme = User.objects.create_user(
+            "bf@z.com", "Passw0rd!", full_name="BF",
+            email_verified=True, status=UserStatus.BLOQUE, access_levels=["FEMME"])
+        self.actif_plain = User.objects.create_user(
+            "ap@z.com", "Passw0rd!", full_name="AP",
+            email_verified=True, status=UserStatus.ACTIF, access_levels=[])
+        self.f_femme = make_formation(branch="FEMME", access_subscription_types=[])
+        self.f_membre = make_formation(branch="MEMBRE", access_subscription_types=[])
+        LibraryPdf.objects.create(title="PDF FEMME", bucket_key="k",
+                                   access_level="FEMME", is_active=True)
+        Audio.objects.create(title="Audio FEMME", bucket_key="k",
+                             access_level="FEMME", is_active=True)
+        LiveSession.objects.create(title="Live FEMME", start_at=timezone.now(),
+                                   duration_minutes=60, branche="FEMME")
+        LiveSession.objects.create(title="Live MEMBRE", start_at=timezone.now(),
+                                   duration_minutes=60, branche="MEMBRE")
+
+    def _titles(self, path):
+        r = self.client.get(path)
+        data = r.data
+        items = data["results"] if isinstance(data, dict) and "results" in data else data
+        return [item["title"] for item in items]
+
+    def test_actif_femme_sees_all_femme_content(self):
+        self.client.force_authenticate(self.actif_femme)
+        self.assertIn("PDF FEMME", self._titles("/api/library/"))
+        self.assertIn("Audio FEMME", self._titles("/api/audio/"))
+        self.assertIn("Live FEMME", self._titles("/api/lives/"))
+        formations = self._titles("/api/formations/")
+        self.assertIn(self.f_femme.title, formations)
+        self.assertIn(self.f_membre.title, formations)
+
+    def test_restreint_femme_sees_no_femme_content_anywhere(self):
+        """Bug fixé : RESTREINT + branche payée perd cohéremment l'accès partout."""
+        self.client.force_authenticate(self.restreint_femme)
+        self.assertNotIn("PDF FEMME", self._titles("/api/library/"))
+        self.assertNotIn("Audio FEMME", self._titles("/api/audio/"))
+        self.assertNotIn("Live FEMME", self._titles("/api/lives/"))
+        formations = self._titles("/api/formations/")
+        self.assertNotIn(self.f_femme.title, formations)
+        self.assertNotIn(self.f_membre.title, formations)  # perd aussi socle MEMBRE
+
+    def test_bloque_femme_sees_nothing_even_with_branche(self):
+        """Bug fixé : BLOQUE + branche ne doit rien voir des branches."""
+        self.client.force_authenticate(self.bloque_femme)
+        self.assertNotIn("PDF FEMME", self._titles("/api/library/"))
+        self.assertNotIn("Audio FEMME", self._titles("/api/audio/"))
+        self.assertNotIn("Live FEMME", self._titles("/api/lives/"))
+        formations = self._titles("/api/formations/")
+        self.assertNotIn(self.f_femme.title, formations)
+        self.assertNotIn(self.f_membre.title, formations)
+
+    def test_actif_without_branche_sees_membre_only(self):
+        self.client.force_authenticate(self.actif_plain)
+        self.assertNotIn("PDF FEMME", self._titles("/api/library/"))
+        self.assertNotIn("Audio FEMME", self._titles("/api/audio/"))
+        self.assertNotIn("Live FEMME", self._titles("/api/lives/"))
+        self.assertIn("Live MEMBRE", self._titles("/api/lives/"))
+        formations = self._titles("/api/formations/")
+        self.assertNotIn(self.f_femme.title, formations)
+        self.assertIn(self.f_membre.title, formations)
+
+    def test_anonymous_sees_only_public_formations(self):
+        # is_public=True + branch=FEMME : la règle branche prime pour un anonyme (pas d'accès branche).
+        # Ici self.f_femme n'est pas is_public → invisible pour l'anonyme.
+        r = self.client.get("/api/formations/")
+        titles = [item["title"] for item in r.data]
+        self.assertNotIn(self.f_femme.title, titles)
+        self.assertNotIn(self.f_membre.title, titles)

@@ -15,6 +15,7 @@ class SubscriptionType(models.TextChoices):
 class PaymentType(models.TextChoices):
     INSCRIPTION    = "INSCRIPTION",    "Droit d'inscription"
     COTISATION     = "COTISATION",     "Cotisation mensuelle"
+    ANNUEL         = "ANNUEL",         "Cotisation annuelle"
     BRANCHE_FEMME  = "BRANCHE_FEMME",  "Accès espace Femme"
     BRANCHE_ENFANT = "BRANCHE_ENFANT", "Accès espace Enfant"
     DON            = "DON",            "Don volontaire"

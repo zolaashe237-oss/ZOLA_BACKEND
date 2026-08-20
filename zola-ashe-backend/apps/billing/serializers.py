@@ -3,7 +3,8 @@ from rest_framework import serializers
 
 from .models import Payment, Subscription
 
-PURCHASE_KINDS = ("INSCRIPTION", "COTISATION", "DON")
+PURCHASE_KINDS = ("INSCRIPTION", "COTISATION", "ANNUEL", "DON",
+                   "BRANCHE_FEMME", "BRANCHE_ENFANT")
 
 
 class SubscriptionSerializer(serializers.ModelSerializer):

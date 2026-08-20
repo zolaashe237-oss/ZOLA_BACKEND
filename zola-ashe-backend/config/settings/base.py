@@ -51,6 +51,7 @@ LOCAL_APPS = [
     "apps.notifications",
     "apps.ai_quiz",
     "apps.memoir",
+    "apps.affiliation",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS
@@ -336,10 +337,12 @@ SWINMO_CANCEL_URL = env("SWINMO_CANCEL_URL", default="http://localhost:3000/paie
 # Modèle du livret : droit d'inscription unique + cotisation mensuelle + don libre.
 PRICE_INSCRIPTION = env.int("PRICE_INSCRIPTION", default=10000)   # 10 000 FCFA (≈ 20 € / 25 $)
 PRICE_COTISATION = env.int("PRICE_COTISATION", default=2000)      # 2 000 FCFA / mois (minimum)
+PRICE_ANNUEL     = env.int("PRICE_ANNUEL",     default=24000)     # 24 000 FCFA / an (défaut : 12 × mensuel)
 DON_MIN_AMOUNT = env.int("DON_MIN_AMOUNT", default=500)           # plancher d'un don volontaire
 
 SWINMO_PRODUCT_INSCRIPTION = env("SWINMO_PRODUCT_INSCRIPTION", default="")
 SWINMO_PRODUCT_COTISATION = env("SWINMO_PRODUCT_COTISATION", default="")
+SWINMO_PRODUCT_ANNUEL     = env("SWINMO_PRODUCT_ANNUEL",     default="")
 SWINMO_PRODUCT_DON = env("SWINMO_PRODUCT_DON", default="")
 
 # URL publique du front (pour rediriger vers la page de paiement).

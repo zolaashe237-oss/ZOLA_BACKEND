@@ -74,12 +74,12 @@ def send_block_notification(user_id: int, reason: str):
     user = User.objects.filter(id=user_id).first()
     if not user:
         return "User not found"
-        
+
     subject = "ZOLA ASHÉ - Votre compte a été bloqué"
     message = f"Bonjour {user.full_name},\n\nVotre compte a été bloqué pour la raison suivante : {reason}.\n\nVeuillez nous contacter pour plus d'informations."
-    
+
     send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email], fail_silently=True)
-    
+
     if user.phone:
         service = WhatsAppService()
         service.send_template_message(
@@ -87,5 +87,55 @@ def send_block_notification(user_id: int, reason: str):
             template_slug="block_notification",
             variables={"reason": reason},
         )
-        
+
     return f"Block notification sent to {user.email}"
+
+
+@app.task
+def send_warn_notification(user_id: int, reason: str, nb_warnings: int):
+    """Notifie un membre averti (email + WhatsApp) — alerte récidive dès 3 (RG-32)."""
+    from django.conf import settings
+    from django.core.mail import send_mail
+    from apps.accounts.models import User
+    from apps.notifications.whatsapp import WhatsAppService
+
+    user = User.objects.filter(id=user_id).first()
+    if not user:
+        return "User not found"
+
+    recidive = nb_warnings >= 3
+    suffix = (
+        "\n\nAttention : vous avez atteint 3 avertissements. "
+        "Toute nouvelle infraction pourra entraîner le blocage de votre compte."
+        if recidive else ""
+    )
+    subject = "ZOLA ASHÉ - Avertissement de modération"
+    message = (
+        f"Bonjour {user.full_name},\n\n"
+        f"Un avertissement vient d'être ajouté à votre compte pour le motif suivant : {reason}.\n"
+        f"Nombre total d'avertissements : {nb_warnings}."
+        f"{suffix}\n\n"
+        f"Pour toute question, contactez-nous depuis votre espace membre."
+    )
+    send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email], fail_silently=True)
+
+    if user.phone:
+        service = WhatsAppService()
+        service.send_template_message(
+            phone_number=user.phone,
+            template_slug="warn_notification",
+            variables={"reason": reason, "nb_warnings": str(nb_warnings)},
+        )
+
+    try:
+        from apps.notifications.models import Notification, NotifType
+        Notification.objects.create(
+            user=user,
+            type=NotifType.MODERATION,
+            title="Avertissement reçu",
+            body=f"Motif : {reason}. Total : {nb_warnings} avertissement(s).",
+        )
+    except Exception:
+        pass
+
+    return f"Warn notification sent to {user.email} (n={nb_warnings})"

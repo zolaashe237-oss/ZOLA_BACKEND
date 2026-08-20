@@ -46,6 +46,19 @@ def _month_start():
     return timezone.now().replace(day=1, hour=0, minute=0, second=0, microsecond=0)
 
 
+def _period_bounds(request):
+    """Extrait (date_from, date_to) depuis les query params du front.
+
+    Accepte les alias `start_date`/`end_date` (contrat frontend actuel) en
+    plus des noms internes `date_from`/`date_to`. Retourne (None, None) si
+    rien n'est fourni — l'appelant décide alors de sa fenêtre par défaut.
+    """
+    p = request.query_params
+    date_from = p.get("date_from") or p.get("start_date")
+    date_to   = p.get("date_to")   or p.get("end_date")
+    return date_from, date_to
+
+
 def _last_cotisation_subquery():
     """Sous-requête : `paid_at` du dernier paiement COTISATION VALIDE d'un user."""
     return Subquery(
@@ -66,14 +79,30 @@ class DashboardView(APIView):
     """KPIs temps réel du back-office (CDC §5.2)."""
     permission_classes = [IsAdmin]
 
-    def get(self, _request):
-        month_start = _month_start()
+    def get(self, request):
+        date_from, date_to = _period_bounds(request)
+        default_start = _month_start()
         late_threshold = timezone.now() - timedelta(days=30)
 
-        revenue = (
-            Payment.objects.filter(status=PaymentStatus.VALIDE, paid_at__gte=month_start)
-            .aggregate(total=Sum("amount"))["total"] or 0
-        )
+        # Fenêtre pour revenus / nouveaux membres / modules validés :
+        # période explicite si fournie, sinon mois courant.
+        payments_qs = Payment.objects.filter(status=PaymentStatus.VALIDE)
+        new_members_qs = User.objects.filter(role=Role.MEMBER)
+        modules_qs = QuizResult.objects.filter(validated=True)
+        if date_from:
+            payments_qs = payments_qs.filter(paid_at__date__gte=date_from)
+            new_members_qs = new_members_qs.filter(created_at__date__gte=date_from)
+            modules_qs = modules_qs.filter(validated_at__date__gte=date_from)
+        elif not date_to:
+            payments_qs = payments_qs.filter(paid_at__gte=default_start)
+            new_members_qs = new_members_qs.filter(created_at__gte=default_start)
+            modules_qs = modules_qs.filter(validated_at__gte=default_start)
+        if date_to:
+            payments_qs = payments_qs.filter(paid_at__date__lte=date_to)
+            new_members_qs = new_members_qs.filter(created_at__date__lte=date_to)
+            modules_qs = modules_qs.filter(validated_at__date__lte=date_to)
+
+        revenue = payments_qs.aggregate(total=Sum("amount"))["total"] or 0
         # Membres en retard : dernier paiement COTISATION VALIDE > 30 jours.
         # Une seule requête via Subquery + filter — O(1) au lieu de O(N).
         late = (
@@ -91,9 +120,8 @@ class DashboardView(APIView):
             "revenue_month": revenue,
             "cotisations_late": late,
             "reports_pending": Report.objects.filter(handled=False).count(),
-            "new_members_month": User.objects.filter(role=Role.MEMBER, created_at__gte=month_start).count(),
-            "modules_validated_month": QuizResult.objects.filter(
-                validated=True, validated_at__gte=month_start).count(),
+            "new_members_month": new_members_qs.count(),
+            "modules_validated_month": modules_qs.count(),
         })
 
 
@@ -187,8 +215,7 @@ class ExportMembersView(APIView):
         record(request.user, AuditAction.EXPORT_DATA, target_type="User", reason="Export membres CSV")
 
         qs = User.objects.filter(role=Role.MEMBER).order_by("id")
-        date_from = request.query_params.get("date_from")
-        date_to   = request.query_params.get("date_to")
+        date_from, date_to = _period_bounds(request)
         if date_from:
             qs = qs.filter(created_at__date__gte=date_from)
         if date_to:
@@ -219,8 +246,7 @@ class ExportPaymentsView(APIView):
         record(request.user, AuditAction.EXPORT_DATA, target_type="Payment", reason="Export paiements CSV")
 
         qs = Payment.objects.select_related("user").order_by("id")
-        date_from = request.query_params.get("date_from")
-        date_to   = request.query_params.get("date_to")
+        date_from, date_to = _period_bounds(request)
         if date_from:
             qs = qs.filter(paid_at__date__gte=date_from)
         if date_to:
@@ -286,38 +312,49 @@ class MonthlyRevenueView(APIView):
 
     def get(self, request):
         now = timezone.now()
-        current_year = now.year
-        current_month = now.month
+        tz = timezone.get_current_timezone()
+        date_from_str, date_to_str = _period_bounds(request)
         months_fr = [
             "", "Janvier", "Février", "Mars", "Avril", "Mai", "Juin",
             "Juillet", "Août", "Septembre", "Octobre", "Novembre", "Décembre"
         ]
+
+        # Fenêtre : période explicite (bornes fournies), sinon 12 derniers mois
+        # inclusifs (mois courant + 11 précédents).
+        from datetime import date as _date
+        if date_from_str or date_to_str:
+            end_ref = _date.fromisoformat(date_to_str) if date_to_str else now.date()
+            start_ref = _date.fromisoformat(date_from_str) if date_from_str \
+                else _date(end_ref.year - 1, end_ref.month, 1)
+            start_year, start_month = start_ref.year, start_ref.month
+            end_year, end_month = end_ref.year, end_ref.month
+        else:
+            end_year, end_month = now.year, now.month
+            start_month = end_month - 11
+            start_year = end_year
+            while start_month <= 0:
+                start_month += 12
+                start_year -= 1
+
         results = []
-        for i in range(12):
-            y = current_year
-            m = current_month - i
-            while m <= 0:
-                m += 12
-                y -= 1
-            
-            start_date = timezone.datetime(y, m, 1, 0, 0, 0, tzinfo=timezone.get_current_timezone())
+        y, m = start_year, start_month
+        while (y, m) <= (end_year, end_month):
+            start_dt = timezone.datetime(y, m, 1, 0, 0, 0, tzinfo=tz)
             if m == 12:
-                end_date = timezone.datetime(y + 1, 1, 1, 0, 0, 0, tzinfo=timezone.get_current_timezone())
+                end_dt = timezone.datetime(y + 1, 1, 1, 0, 0, 0, tzinfo=tz)
             else:
-                end_date = timezone.datetime(y, m + 1, 1, 0, 0, 0, tzinfo=timezone.get_current_timezone())
-            
-            total_amount = Payment.objects.filter(
+                end_dt = timezone.datetime(y, m + 1, 1, 0, 0, 0, tzinfo=tz)
+            total = Payment.objects.filter(
                 status=PaymentStatus.VALIDE,
-                paid_at__gte=start_date,
-                paid_at__lt=end_date
+                paid_at__gte=start_dt,
+                paid_at__lt=end_dt,
             ).aggregate(total=Sum("amount"))["total"] or 0
-            
-            results.append({
-                "label": f"{months_fr[m]} {y}",
-                "amount": total_amount
-            })
-            
-        return Response(list(reversed(results)))
+            results.append({"label": f"{months_fr[m]} {y}", "amount": total})
+            m += 1
+            if m > 12:
+                m = 1
+                y += 1
+        return Response(results)
 
 
 class PaymentBreakdownView(APIView):
@@ -447,11 +484,9 @@ class TransactionListView(APIView):
             elif method_param == "MTN_MOBILE_MONEY":
                 qs = qs.filter(swinmo_ref__isnull=False)
                 
-        date_from = params.get("date_from")
+        date_from, date_to = _period_bounds(request)
         if date_from:
             qs = qs.filter(paid_at__date__gte=date_from)
-            
-        date_to = params.get("date_to")
         if date_to:
             qs = qs.filter(paid_at__date__lte=date_to)
             

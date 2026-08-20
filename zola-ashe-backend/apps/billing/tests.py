@@ -240,6 +240,96 @@ class InitiateTests(APITestCase):
 
 
 @override_settings(**TEST_SETTINGS)
+class BranchePaymentFlowTests(APITestCase):
+    """Flow complet Branche Femme/Enfant : initiate HTTP + activation → access_levels."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("br@z.com", "Passw0rd!", full_name="Br",
+                                              email_verified=True, status=UserStatus.ACTIF)
+        make_member(self.user, days_left=30)
+        self.client.force_authenticate(self.user)
+
+    def test_initiate_branche_femme_via_http_returns_201(self):
+        """Rapport #3 : POST /billing/payments/initiate/ avec kind=BRANCHE_FEMME ne doit pas renvoyer 400."""
+        with patch("apps.billing.services.swinmo.create_checkout_link",
+                   return_value={"url": "https://swinmo/pay/fem"}):
+            r = self.client.post("/api/billing/payments/initiate/",
+                                 {"kind": "BRANCHE_FEMME"}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.data["amount"], 25000)
+        payment = Payment.objects.get(id=r.data["payment_id"])
+        self.assertEqual(payment.type, PaymentType.BRANCHE_FEMME)
+        self.assertEqual(payment.status, PaymentStatus.EN_ATTENTE)
+
+    def test_initiate_branche_enfant_via_http_returns_201(self):
+        with patch("apps.billing.services.swinmo.create_checkout_link",
+                   return_value={"url": "https://swinmo/pay/enf"}):
+            r = self.client.post("/api/billing/payments/initiate/",
+                                 {"kind": "BRANCHE_ENFANT"}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        self.assertEqual(r.data["amount"], 20000)
+        self.assertEqual(Payment.objects.get(id=r.data["payment_id"]).type,
+                         PaymentType.BRANCHE_ENFANT)
+
+    def test_activate_branche_femme_grants_femme_access_level(self):
+        payment = Payment.objects.create(user=self.user, type=PaymentType.BRANCHE_FEMME,
+                                          status=PaymentStatus.EN_ATTENTE,
+                                          amount=25000, swinmo_ref="brf1")
+        activate_paid_payment(payment, "BRANCHE_FEMME")
+        self.user.refresh_from_db()
+        self.assertIn("FEMME", self.user.access_levels or [])
+
+    def test_activate_branche_enfant_grants_enfant_access_level(self):
+        payment = Payment.objects.create(user=self.user, type=PaymentType.BRANCHE_ENFANT,
+                                          status=PaymentStatus.EN_ATTENTE,
+                                          amount=20000, swinmo_ref="bre1")
+        activate_paid_payment(payment, "BRANCHE_ENFANT")
+        self.user.refresh_from_db()
+        self.assertIn("ENFANT", self.user.access_levels or [])
+
+
+@override_settings(**TEST_SETTINGS)
+class AnnuelSubscriptionFlowTests(APITestCase):
+    """Flow complet cotisation annuelle : initiate → prolongation 12 mois."""
+
+    def setUp(self):
+        self.user = User.objects.create_user("an@z.com", "Passw0rd!", full_name="An",
+                                              email_verified=True, status=UserStatus.ACTIF)
+        self.sub = make_member(self.user, days_left=5)  # échéance courte
+        self.client.force_authenticate(self.user)
+
+    def test_initiate_annuel_via_http_returns_201(self):
+        with patch("apps.billing.services.swinmo.create_checkout_link",
+                   return_value={"url": "https://swinmo/pay/an"}):
+            r = self.client.post("/api/billing/payments/initiate/",
+                                 {"kind": "ANNUEL"}, format="json")
+        self.assertEqual(r.status_code, 201, r.content)
+        # Tarif ANNUEL seedé en DB via billing.0008 (24 000 FCFA)
+        self.assertEqual(r.data["amount"], 24000)
+        payment = Payment.objects.get(id=r.data["payment_id"])
+        self.assertEqual(payment.type, PaymentType.ANNUEL)
+        self.assertEqual(payment.status, PaymentStatus.EN_ATTENTE)
+
+    def test_activate_annuel_extends_by_twelve_periods(self):
+        old_end = self.sub.end
+        payment = Payment.objects.create(user=self.user, type=PaymentType.ANNUEL,
+                                          status=PaymentStatus.EN_ATTENTE,
+                                          amount=24000, swinmo_ref="ann1")
+        activate_paid_payment(payment, "ANNUEL")
+        self.sub.refresh_from_db()
+        self.assertEqual((self.sub.end - old_end).days, 12 * 30)
+
+    def test_activate_annuel_restores_actif_for_restreint(self):
+        self.user.set_status(UserStatus.RESTREINT)
+        payment = Payment.objects.create(user=self.user, type=PaymentType.ANNUEL,
+                                          status=PaymentStatus.EN_ATTENTE,
+                                          amount=24000, swinmo_ref="ann2")
+        activate_paid_payment(payment, "ANNUEL")
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.status, UserStatus.ACTIF)
+
+
+@override_settings(**TEST_SETTINGS)
 class CloseSubscriptionTests(APITestCase):
     def setUp(self):
         self.user = User.objects.create_user("close@z.com", "Passw0rd!", full_name="C",

@@ -72,6 +72,9 @@ def resolve_plan(kind: str) -> Plan:
                             SubscriptionType.MEMBRE),
         "COTISATION":  Plan("COTISATION",  settings.SWINMO_PRODUCT_COTISATION,
                             settings.PRICE_COTISATION, PaymentType.COTISATION, None),
+        "ANNUEL":      Plan("ANNUEL",
+                            getattr(settings, "SWINMO_PRODUCT_ANNUEL", ""),
+                            settings.PRICE_ANNUEL, PaymentType.ANNUEL, None),
         "BRANCHE_FEMME":  Plan("BRANCHE_FEMME",
                                getattr(settings, "SWINMO_PRODUCT_BRANCHE_FEMME", ""),
                                25000, PaymentType.BRANCHE_FEMME, None),
@@ -222,6 +225,18 @@ def activate_paid_payment(payment: Payment, kind: str) -> None:
             if user.status == UserStatus.RESTREINT:
                 user.set_status(UserStatus.ACTIF)
 
+    elif kind == "ANNUEL":
+        # Cotisation annuelle : prolonge l'échéance de 12 périodes mensuelles
+        # (par défaut 360 j) et (re)active l'accès si RESTREINT. Comme la
+        # cotisation mensuelle, exige une adhésion préalable (INSCRIPTION).
+        if is_member(user):
+            sub = Subscription.objects.filter(
+                user=user, type=SubscriptionType.MEMBRE, active=True).first()
+            extend_subscription(sub, 12 * period)
+            payment.subscription = sub
+            if user.status == UserStatus.RESTREINT:
+                user.set_status(UserStatus.ACTIF)
+
     elif kind == "DON":
         pass  # facultatif, aucun effet sur l'accès
 
@@ -256,6 +271,7 @@ def _create_payment_notification(user, kind: str, amount: int) -> None:
         labels = {
             "INSCRIPTION":    "Droit d'adhésion",
             "COTISATION":     "Cotisation mensuelle",
+            "ANNUEL":         "Cotisation annuelle",
             "DON":            "Don enregistré",
             "BRANCHE_FEMME":  "Branche Femme",
             "BRANCHE_ENFANT": "Branche Enfant",

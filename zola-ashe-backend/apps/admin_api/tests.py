@@ -66,6 +66,22 @@ class MemberManagementTests(AdminBase):
         self.assertTrue(r.data["recidive_alert"])
         self.assertEqual(AuditLog.objects.filter(action=AuditAction.WARN_USER).count(), 3)
 
+    def test_warn_sends_email_and_creates_in_app_notification(self):
+        """Rapport ADMIN #2 : le warn doit notifier le membre (email + in-app)."""
+        from django.core import mail
+        from apps.notifications.models import Notification, NotifType
+        mail.outbox = []
+        r = self.client.post(f"/api/admin/members/{self.member.id}/warn/",
+                             {"reason": "spam répété"}, format="json")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(len(mail.outbox), 1)
+        self.assertIn(self.member.email, mail.outbox[0].to)
+        self.assertIn("avertissement", mail.outbox[0].subject.lower())
+        self.assertIn("spam répété", mail.outbox[0].body)
+        self.assertTrue(
+            Notification.objects.filter(user=self.member, type=NotifType.MODERATION).exists()
+        )
+
     def test_reset_password_returns_temp_password(self):
         r = self.client.post(f"/api/admin/members/{self.member.id}/reset-password/")
         self.assertEqual(r.status_code, 200)
@@ -129,6 +145,33 @@ class FinanceTests(AdminBase):
         r = self.client.get("/api/admin/dashboard/")
         self.assertIn("revenue_month", r.data)
         self.assertIn("reports_pending", r.data)
+
+    def test_dashboard_accepts_period_aliases(self):
+        """Rapport ADMIN #1 : Dashboard doit filtrer sur start_date/end_date (front)."""
+        # Un paiement dans la fenêtre et un hors fenêtre (paid_at est auto_now_add
+        # donc on force la date via update() après create()).
+        p_recent = Payment.objects.create(user=self.member, type=PaymentType.COTISATION,
+                                           amount=5000, status=PaymentStatus.VALIDE)
+        p_old = Payment.objects.create(user=self.member, type=PaymentType.COTISATION,
+                                        amount=9999, status=PaymentStatus.VALIDE)
+        Payment.objects.filter(id=p_recent.id).update(
+            paid_at=timezone.now() - timezone.timedelta(days=1))
+        Payment.objects.filter(id=p_old.id).update(
+            paid_at=timezone.now() - timezone.timedelta(days=60))
+        start = (date.today() - timezone.timedelta(days=7)).isoformat()
+        end = date.today().isoformat()
+        r = self.client.get(f"/api/admin/dashboard/?start_date={start}&end_date={end}")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["revenue_month"], 5000)  # exclut le vieux paiement
+
+    def test_export_payments_csv_start_date_alias(self):
+        """Rapport ADMIN #1 : les exports doivent accepter start_date en alias de date_from."""
+        Payment.objects.create(user=self.member, type=PaymentType.COTISATION,
+                                amount=5000, status=PaymentStatus.VALIDE,
+                                paid_at=timezone.now())
+        r = self.client.get(f"/api/admin/exports/payments.csv?start_date={date.today()}")
+        self.assertEqual(r.status_code, 200)
+        self.assertIn(self.member.email, b"".join(r.streaming_content).decode("utf-8"))
 
     def test_export_members_csv(self):
         r = self.client.get("/api/admin/exports/members.csv")
@@ -299,6 +342,19 @@ class ContentAdminTests(AdminBase):
         f.refresh_from_db()
         self.assertEqual(f.status, FormationStatus.DRAFT)             # RG-20 (dépubliée)
         self.assertTrue(AuditLog.objects.filter(action=AuditAction.DELETE_CONTENT).exists())
+
+    def test_formation_serializer_exposes_courses_count(self):
+        """Rapport ADMIN #3 : la fiche admin doit exposer le nombre total de cours."""
+        f = Formation.objects.create(title="F3", category=Category.FORMATION)
+        m1 = Module.objects.create(formation=f, title="M1", order=1)
+        m2 = Module.objects.create(formation=f, title="M2", order=2)
+        Course.objects.create(module=m1, title="C1", order=1)
+        Course.objects.create(module=m1, title="C2", order=2)
+        Course.objects.create(module=m2, title="C3", order=1)
+        r = self.client.get(f"/api/admin/formations/{f.id}/")
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["module_count"], 2)
+        self.assertEqual(r.data["courses_count"], 3)
 
     def test_scheduled_formation_requires_publish_at(self):
         r = self.client.post("/api/admin/formations/", {

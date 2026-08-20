@@ -125,7 +125,7 @@ class ReasonSerializer(serializers.Serializer):
 
 class ManualPaymentSerializer(serializers.Serializer):
     user_id = serializers.IntegerField()
-    kind = serializers.ChoiceField(choices=["INSCRIPTION", "COTISATION", "DON"])
+    kind = serializers.ChoiceField(choices=["INSCRIPTION", "COTISATION", "ANNUEL", "DON"])
     amount = serializers.IntegerField(required=False, min_value=0)
     reason = serializers.CharField(max_length=255)
 
@@ -157,8 +157,9 @@ def _validate_access_types(value):
 
 
 class AdminFormationSerializer(serializers.ModelSerializer):
-    module_count = serializers.SerializerMethodField()
-    cover_url    = serializers.SerializerMethodField()
+    module_count  = serializers.SerializerMethodField()
+    courses_count = serializers.SerializerMethodField()
+    cover_url     = serializers.SerializerMethodField()
     # Nommage frontend admin : branche/niveau mappés sur les champs DB branch/level
     branche = serializers.CharField(source="branch", allow_blank=True, required=False)
     niveau  = serializers.CharField(source="level",  allow_blank=True, required=False)
@@ -167,11 +168,15 @@ class AdminFormationSerializer(serializers.ModelSerializer):
         model = Formation
         fields = ("id", "title", "description", "category", "branche", "niveau",
                   "access_subscription_types", "is_public", "cover_url", "cover_key",
-                  "status", "publish_at", "order", "module_count", "created_at", "updated_at")
+                  "status", "publish_at", "order", "module_count", "courses_count",
+                  "created_at", "updated_at")
         read_only_fields = ("id", "created_at", "updated_at")
 
     def get_module_count(self, obj) -> int:
         return obj.modules.count()
+
+    def get_courses_count(self, obj) -> int:
+        return Course.objects.filter(module__formation=obj).count()
 
     def get_cover_url(self, obj) -> str:
         from apps.content.services import generate_signed_url

@@ -25,6 +25,7 @@ from .serializers import (
     LiveSessionSerializer,
 )
 from .services import (
+    course_completed,
     course_unlocked,
     final_exam_unlocked,
     formation_accessible,
@@ -35,6 +36,29 @@ from .services import (
 )
 
 
+def _user_has_access_to_branch(user, branch: str) -> bool:
+    """Règle canonique d'accès à une branche de contenu (MEMBRE/FEMME/ENFANT).
+
+    - BLOQUE ou anonyme : aucun accès aux branches.
+    - MEMBRE : requiert user ACTIF (cotisation à jour).
+    - FEMME/ENFANT : requiert user ACTIF ET branche présente dans access_levels.
+      Une branche FEMME/ENFANT est un complément payant du socle MEMBRE : si le
+      membre passe RESTREINT (cotisation en retard), il perd temporairement
+      l'accès aux branches, comme il perd l'accès au socle MEMBRE.
+    """
+    from apps.accounts.models import UserStatus
+    if not getattr(user, "is_authenticated", False):
+        return False
+    if user.status == UserStatus.BLOQUE:
+        return False
+    if branch == "MEMBRE":
+        return user.status == UserStatus.ACTIF
+    if branch in ("FEMME", "ENFANT"):
+        return (user.status == UserStatus.ACTIF
+                and branch in (user.access_levels or []))
+    return False
+
+
 def _allowed_access_levels(user) -> list[str]:
     """Niveaux de contenu accessibles (PUBLIC/MEMBRE/FEMME/ENFANT) selon le profil."""
     if not getattr(user, "is_authenticated", False):
@@ -43,11 +67,9 @@ def _allowed_access_levels(user) -> list[str]:
     if user.status == UserStatus.BLOQUE:
         return []
     levels = ["PUBLIC"]
-    if user.status == UserStatus.ACTIF:
-        levels.append("MEMBRE")
-        for lvl in ("FEMME", "ENFANT"):
-            if lvl in (user.access_levels or []):
-                levels.append(lvl)
+    for branch in ("MEMBRE", "FEMME", "ENFANT"):
+        if _user_has_access_to_branch(user, branch):
+            levels.append(branch)
     return levels
 
 
@@ -121,14 +143,10 @@ class FormationViewSet(viewsets.ReadOnlyModelViewSet):
             # Visiteurs non connectés : uniquement les formations marquées publiques
             return qs.filter(is_public=True).distinct()
 
-        # Masquer les branches dont l'utilisateur n'a pas l'accès requis
-        from apps.accounts.models import UserStatus
-        if user.status != UserStatus.ACTIF:
-            qs = qs.exclude(branch="MEMBRE")
-        if "FEMME" not in (user.access_levels or []):
-            qs = qs.exclude(branch="FEMME")
-        if "ENFANT" not in (user.access_levels or []):
-            qs = qs.exclude(branch="ENFANT")
+        # Masquer les branches dont l'utilisateur n'a pas l'accès requis (règle unique).
+        for branch in ("MEMBRE", "FEMME", "ENFANT"):
+            if not _user_has_access_to_branch(user, branch):
+                qs = qs.exclude(branch=branch)
         if self.action == "retrieve":
             qs = qs.prefetch_related(
                 "modules__courses__resources", "modules__courses__quiz__questions",
@@ -270,10 +288,17 @@ class QuizViewSet(viewsets.ReadOnlyModelViewSet):
 
 
 class LiveSessionViewSet(viewsets.ReadOnlyModelViewSet):
-    """Vues membre pour les sessions en direct et replays."""
+    """Vues membre pour les sessions en direct et replays — filtrées par branche."""
     permission_classes = [IsAuthenticated]
     serializer_class = LiveSessionSerializer
-    queryset = LiveSession.objects.all().order_by("status", "-start_at")
+
+    def get_queryset(self):
+        user = self.request.user
+        qs = LiveSession.objects.all().order_by("status", "-start_at")
+        for branch in ("MEMBRE", "FEMME", "ENFANT"):
+            if not _user_has_access_to_branch(user, branch):
+                qs = qs.exclude(branche=branch)
+        return qs
 
 
 class AudioViewSet(viewsets.ReadOnlyModelViewSet):

@@ -22,6 +22,7 @@ def send_confirmation_email(email: str, kind: str,
     labels = {
         "INSCRIPTION": "votre adhésion à la communauté",
         "COTISATION": "votre cotisation mensuelle",
+        "ANNUEL": "votre cotisation annuelle",
         "DON": "votre don à la communauté",
         "BRANCHE_FEMME": "votre accès Branche Femme",
         "BRANCHE_ENFANT": "votre accès Branche Enfant",

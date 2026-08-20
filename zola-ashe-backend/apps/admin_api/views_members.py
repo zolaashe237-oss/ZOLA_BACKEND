@@ -103,13 +103,16 @@ class MemberViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
                    request=ReasonSerializer, responses={200: _WarnResponse})
     @action(detail=True, methods=["post"])
     def warn(self, request, pk=None):
+        from apps.admin_api.tasks import send_warn_notification
         serializer = ReasonSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = self.get_object()
+        reason = serializer.validated_data["reason"]
         user.nb_warnings += 1
         user.save(update_fields=["nb_warnings"])
         record(request.user, AuditAction.WARN_USER, target_type="User", target_id=user.id,
-               reason=serializer.validated_data["reason"])
+               reason=reason)
+        send_warn_notification.delay(user.id, reason, user.nb_warnings)
         return Response({"nb_warnings": user.nb_warnings,
                          "recidive_alert": user.nb_warnings >= 3})  # RG-32
 
