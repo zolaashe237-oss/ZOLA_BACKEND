@@ -80,7 +80,7 @@ class Command(BaseCommand):
         flow = InstalledAppFlow.from_client_config(client_config, SCOPES)
 
         self.stdout.write(
-            "→ Un onglet navigateur va s'ouvrir pour la connexion Google.\n"
+            "-> Un onglet navigateur va s'ouvrir pour la connexion Google.\n"
             "  Utilise le compte YouTube propriétaire des vidéos à transcrire.\n"
         )
 
@@ -98,7 +98,7 @@ class Command(BaseCommand):
                 "https://myaccount.google.com/permissions puis relancer."
             )
 
-        self.stdout.write(self.style.SUCCESS("\n=== SUCCÈS ==="))
+        self.stdout.write(self.style.SUCCESS("\n=== SUCCES ==="))
         self.stdout.write("Copie ces lignes dans ton `.env` :\n\n")
         self.stdout.write(f"YOUTUBE_OAUTH_CLIENT_ID={client_id}")
         self.stdout.write(f"YOUTUBE_OAUTH_CLIENT_SECRET={client_secret}")
@@ -107,7 +107,7 @@ class Command(BaseCommand):
         )
         self.stdout.write(
             self.style.WARNING(
-                "\n⚠️  Si le consent screen GCP est encore en mode « Testing » "
+                "\n[WARNING] Si le consent screen GCP est encore en mode « Testing » "
                 "(non publié), ce refresh_token expirera dans 7 jours. Publier "
                 "l'app en « In production » sur Google Cloud Console pour "
                 "obtenir un token permanent."

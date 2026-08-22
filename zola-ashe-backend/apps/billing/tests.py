@@ -328,6 +328,20 @@ class AnnuelSubscriptionFlowTests(APITestCase):
         self.user.refresh_from_db()
         self.assertEqual(self.user.status, UserStatus.ACTIF)
 
+    def test_activate_annuel_for_non_member(self):
+        user = User.objects.create_user("new_annuel@z.com", "Passw0rd!", full_name="New",
+                                         email_verified=True, status=UserStatus.RESTREINT)
+        payment = Payment.objects.create(user=user, type=PaymentType.ANNUEL,
+                                          status=PaymentStatus.EN_ATTENTE,
+                                          amount=24000, swinmo_ref="ann3")
+        activate_paid_payment(payment, "ANNUEL")
+        user.refresh_from_db()
+        self.assertEqual(user.status, UserStatus.ACTIF)
+        sub = Subscription.objects.get(user=user, type=SubscriptionType.MEMBRE)
+        self.assertTrue(sub.active)
+        self.assertEqual(sub.end, timezone.now().date() + timedelta(days=12 * 30))
+
+
 
 @override_settings(**TEST_SETTINGS)
 class CloseSubscriptionTests(APITestCase):

@@ -227,15 +227,17 @@ def activate_paid_payment(payment: Payment, kind: str) -> None:
 
     elif kind == "ANNUEL":
         # Cotisation annuelle : prolonge l'échéance de 12 périodes mensuelles
-        # (par défaut 360 j) et (re)active l'accès si RESTREINT. Comme la
-        # cotisation mensuelle, exige une adhésion préalable (INSCRIPTION).
-        if is_member(user):
-            sub = Subscription.objects.filter(
-                user=user, type=SubscriptionType.MEMBRE, active=True).first()
-            extend_subscription(sub, 12 * period)
-            payment.subscription = sub
-            if user.status == UserStatus.RESTREINT:
-                user.set_status(UserStatus.ACTIF)
+        # (par défaut 360 j) et (re)active l'accès si RESTREINT.
+        # Si le membre n'a pas encore d'adhésion active (premier achat annuel à l'inscription),
+        # on la crée automatiquement.
+        sub, _ = Subscription.objects.get_or_create(
+            user=user, type=SubscriptionType.MEMBRE, active=True,
+            defaults={"start": timezone.now().date(), "end": None},
+        )
+        extend_subscription(sub, 12 * period)
+        payment.subscription = sub
+        if user.status != UserStatus.ACTIF:
+            user.set_status(UserStatus.ACTIF)
 
     elif kind == "DON":
         pass  # facultatif, aucun effet sur l'accès
@@ -316,32 +318,6 @@ def process_webhook_event(event: str, data: dict) -> str:
 
     if reference:
         payment = Payment.objects.filter(swinmo_ref=reference).first()
-
-    if payment is None:
-        # Fallback : réconciliation par email et produit (RG-08)
-        email = data.get("customerEmail")
-        product_id = data.get("productId")
-        if email and product_id:
-            payment_type = None
-            if product_id == settings.SWINMO_PRODUCT_INSCRIPTION:
-                payment_type = PaymentType.INSCRIPTION
-            elif product_id == settings.SWINMO_PRODUCT_COTISATION:
-                payment_type = PaymentType.COTISATION
-            elif product_id == settings.SWINMO_PRODUCT_DON:
-                payment_type = PaymentType.DON
-
-            if payment_type:
-                payment = (
-                    Payment.objects.filter(
-                        user__email__iexact=email,
-                        type=payment_type,
-                        status=PaymentStatus.EN_ATTENTE,
-                    )
-                    .order_by("paid_at")
-                    .first()
-                )
-                if payment:
-                    matched_via_fallback = True
 
     if payment is None:
         return "unknown-payment"

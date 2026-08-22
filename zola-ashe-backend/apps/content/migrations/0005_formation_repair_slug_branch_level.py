@@ -40,6 +40,16 @@ def apply_repair_if_postgres(apps, schema_editor):
     if schema_editor.connection.vendor == 'postgresql':
         with schema_editor.connection.cursor() as cursor:
             cursor.execute(REPAIR_SQL)
+    elif schema_editor.connection.vendor == 'sqlite':
+        with schema_editor.connection.cursor() as cursor:
+            cursor.execute("PRAGMA table_info(formations)")
+            columns = [row[1] for row in cursor.fetchall()]
+            if 'slug' not in columns:
+                cursor.execute("ALTER TABLE formations ADD COLUMN slug varchar(220) NOT NULL DEFAULT ''")
+            if 'branch' not in columns:
+                cursor.execute("ALTER TABLE formations ADD COLUMN branch varchar(10) NOT NULL DEFAULT 'GENERALE'")
+            if 'level' not in columns:
+                cursor.execute("ALTER TABLE formations ADD COLUMN level varchar(15) NOT NULL DEFAULT ''")
 
 
 class Migration(migrations.Migration):

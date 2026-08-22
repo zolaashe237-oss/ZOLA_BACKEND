@@ -68,7 +68,7 @@ class SubscriptionTypesView(APIView):
     """Tarifs publics (vitrine) — lus en DB (SubscriptionPlan), aucun secret exposé."""
     permission_classes = [AllowAny]
 
-    _KINDS = ["INSCRIPTION", "COTISATION", "DON", "BRANCHE_FEMME", "BRANCHE_ENFANT"]
+    _KINDS = ["INSCRIPTION", "COTISATION", "ANNUEL", "DON", "BRANCHE_FEMME", "BRANCHE_ENFANT"]
 
     def get(self, _request):
         from .models import SubscriptionPlan
