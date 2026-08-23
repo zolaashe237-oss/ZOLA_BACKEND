@@ -89,7 +89,7 @@ def resolve_plan(kind: str) -> Plan:
     base = STATIC[kind]
     try:
         db = SubscriptionPlan.objects.get(kind=kind, is_active=True)
-        amount = db.tranche_amount if db.tranche_amount is not None else db.price_total
+        amount = db.tranche_amount if (db.billing == "TRANCHES" and db.tranche_amount) else db.price_total
         return Plan(base.kind, base.product_id, amount, base.payment_type, base.subscription_type)
     except SubscriptionPlan.DoesNotExist:
         return base

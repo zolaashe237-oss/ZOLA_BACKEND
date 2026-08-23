@@ -73,13 +73,14 @@ class SubscriptionTypesView(APIView):
         plans = SubscriptionPlan.objects.filter(is_active=True).order_by("billing", "name")
         result = []
         for p in plans:
+            effective_amount = p.tranche_amount if (p.billing == "TRANCHES" and p.tranche_amount) else p.price_total
             result.append({
                 "kind":           p.kind,
                 "label":          p.name,
                 "description":    p.description,
-                "amount":         p.tranche_amount if p.tranche_amount is not None else p.price_total,
+                "amount":         effective_amount,
                 "price_total":    p.price_total,
-                "tranche_amount": p.tranche_amount,
+                "tranche_amount": p.tranche_amount if p.billing == "TRANCHES" else None,
                 "nb_tranches":    p.nb_tranches,
                 "billing":        p.billing,
             })
