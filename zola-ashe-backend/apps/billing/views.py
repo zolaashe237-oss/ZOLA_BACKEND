@@ -68,24 +68,21 @@ class SubscriptionTypesView(APIView):
     """Tarifs publics (vitrine) — lus en DB (SubscriptionPlan), aucun secret exposé."""
     permission_classes = [AllowAny]
 
-    _KINDS = ["INSCRIPTION", "COTISATION", "ANNUEL", "DON", "BRANCHE_FEMME", "BRANCHE_ENFANT"]
-
     def get(self, _request):
         from .models import SubscriptionPlan
-        db_plans = {p.kind: p for p in SubscriptionPlan.objects.filter(is_active=True)}
+        plans = SubscriptionPlan.objects.filter(is_active=True).order_by("billing", "name")
         result = []
-        for kind in self._KINDS:
-            p = db_plans.get(kind)
-            if p:
-                result.append({
-                    "kind":           kind,
-                    "label":          p.name,
-                    "amount":         p.tranche_amount if p.tranche_amount is not None else p.price_total,
-                    "price_total":    p.price_total,
-                    "tranche_amount": p.tranche_amount,
-                    "nb_tranches":    p.nb_tranches,
-                    "billing":        p.billing,
-                })
+        for p in plans:
+            result.append({
+                "kind":           p.kind,
+                "label":          p.name,
+                "description":    p.description,
+                "amount":         p.tranche_amount if p.tranche_amount is not None else p.price_total,
+                "price_total":    p.price_total,
+                "tranche_amount": p.tranche_amount,
+                "nb_tranches":    p.nb_tranches,
+                "billing":        p.billing,
+            })
         return Response(result)
 
 
