@@ -112,6 +112,8 @@ class FormationViewSet(viewsets.ReadOnlyModelViewSet):
         from django.db.models import Q
         user = self.request.user
         qs = visible_formations_qs()
+        if branch := self.request.query_params.get("branch"):
+            qs = qs.filter(branch=branch)
         if category := self.request.query_params.get("category"):
             qs = qs.filter(category=category)
         if search := self.request.query_params.get("search"):

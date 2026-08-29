@@ -659,6 +659,7 @@ class AdminPostCreateView(APIView):
                             status=status.HTTP_400_BAD_REQUEST)
         post = Post.objects.create(
             author=request.user,
+            title=data.get("title", ""),
             text=data.get("text", ""),
             audience=data["audience"],
             is_pinned=data["is_pinned"],

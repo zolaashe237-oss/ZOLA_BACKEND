@@ -345,6 +345,7 @@ class ResetQuizSerializer(serializers.Serializer):
 # ─── Publication admin (annonces) ────────────────────────────────────────────
 
 class AdminPostSerializer(serializers.Serializer):
+    title = serializers.CharField(max_length=200, required=False, allow_blank=True)
     text = serializers.CharField(max_length=2000, required=False, allow_blank=True)
     audience = serializers.ChoiceField(choices=["TOUS", "FEMME", "ENFANT"], default="TOUS")
     is_pinned = serializers.BooleanField(default=False)
