@@ -71,33 +71,51 @@ def generate_signed_url(key: str) -> str:
     """
     if not key:
         return ""
-    if not settings.USE_S3:
-        return default_storage.url(key)
+    if not getattr(settings, "USE_S3", False):
+        try:
+            return default_storage.url(key)
+        except Exception as exc:
+            logger.error("Échec default_storage.url (key=%s): %s", key, exc)
+            return f"/media/{key.lstrip('/')}"
 
     import mimetypes
 
     import boto3
     from botocore.client import Config
 
-    client = boto3.client(
-        "s3",
-        endpoint_url=settings.S3_PUBLIC_ENDPOINT_URL,
-        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-        region_name=settings.AWS_S3_REGION_NAME,
-        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
-    )
-    params = {
-        "Bucket": settings.AWS_STORAGE_BUCKET_NAME,
-        "Key": key,
-        "ResponseContentDisposition": "inline",
-    }
-    mime, _ = mimetypes.guess_type(key)
-    if mime:
-        params["ResponseContentType"] = mime
-    return client.generate_presigned_url(
-        "get_object", Params=params, ExpiresIn=settings.AWS_QUERYSTRING_EXPIRE,
-    )
+    endpoint_url = getattr(settings, "S3_PUBLIC_ENDPOINT_URL", None) or getattr(settings, "AWS_S3_ENDPOINT_URL", None)
+    aws_access_key_id = getattr(settings, "AWS_ACCESS_KEY_ID", "")
+    aws_secret_access_key = getattr(settings, "AWS_SECRET_ACCESS_KEY", "")
+    bucket_name = getattr(settings, "AWS_STORAGE_BUCKET_NAME", "") or getattr(settings, "MEDIA_BUCKET", "zola-media")
+    region_name = getattr(settings, "AWS_S3_REGION_NAME", "us-east-1")
+    expire_in = getattr(settings, "AWS_QUERYSTRING_EXPIRE", 3600)
+
+    try:
+        client = boto3.client(
+            "s3",
+            endpoint_url=endpoint_url,
+            aws_access_key_id=aws_access_key_id,
+            aws_secret_access_key=aws_secret_access_key,
+            region_name=region_name,
+            config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+        )
+        params = {
+            "Bucket": bucket_name,
+            "Key": key,
+            "ResponseContentDisposition": "inline",
+        }
+        mime, _ = mimetypes.guess_type(key)
+        if mime:
+            params["ResponseContentType"] = mime
+        return client.generate_presigned_url(
+            "get_object", Params=params, ExpiresIn=expire_in,
+        )
+    except Exception as exc:
+        logger.error("Échec génération URL signée S3 (key=%s): %s", key, exc)
+        try:
+            return default_storage.url(key)
+        except Exception:
+            return f"/{bucket_name}/{key.lstrip('/')}"
 
 
 # ─── Accès à la formation (abonnement, RG-22 / RG-10) ───────────────────────

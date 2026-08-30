@@ -324,10 +324,14 @@ class AudioViewSet(viewsets.ReadOnlyModelViewSet):
         if not audio.bucket_key:
             return Response({"detail": "Aucun fichier attaché à cet audio."},
                             status=status.HTTP_400_BAD_REQUEST)
-        url = generate_signed_url(audio.bucket_key)
-        if url and url.startswith("/"):
-            url = request.build_absolute_uri(url)
-        return Response({"kind": "audio", "url": url, "expires_in": 3600})
+        try:
+            url = generate_signed_url(audio.bucket_key)
+            if url and url.startswith("/"):
+                url = request.build_absolute_uri(url)
+            return Response({"kind": "audio", "url": url, "expires_in": 3600})
+        except Exception as exc:
+            return Response({"detail": f"Erreur lors de la génération de l'accès audio : {exc}"},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
 
 class LibraryPdfViewSet(viewsets.ReadOnlyModelViewSet):
@@ -353,7 +357,11 @@ class LibraryPdfViewSet(viewsets.ReadOnlyModelViewSet):
         if not pdf.bucket_key:
             return Response({"detail": "Aucun fichier attaché à ce document."},
                             status=status.HTTP_400_BAD_REQUEST)
-        url = generate_signed_url(pdf.bucket_key)
-        if url and url.startswith("/"):
-            url = request.build_absolute_uri(url)
-        return Response({"kind": "file", "url": url, "expires_in": 3600})
+        try:
+            url = generate_signed_url(pdf.bucket_key)
+            if url and url.startswith("/"):
+                url = request.build_absolute_uri(url)
+            return Response({"kind": "file", "url": url, "expires_in": 3600})
+        except Exception as exc:
+            return Response({"detail": f"Erreur lors de la génération de l'accès au document : {exc}"},
+                            status=status.HTTP_500_INTERNAL_SERVER_ERROR)
