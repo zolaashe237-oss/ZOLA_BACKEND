@@ -21,12 +21,27 @@ class PublicSignedS3Storage(S3Storage):
 
     def url(self, name, parameters=None, expire=None, http_method=None):
         import mimetypes
+        from urllib.parse import urlparse
         import boto3
         from botocore.client import Config
+
+        custom_domain = getattr(settings, "AWS_S3_CUSTOM_DOMAIN", "") or getattr(settings, "R2_CUSTOM_DOMAIN", "")
+        if custom_domain:
+            domain = custom_domain.strip().rstrip("/")
+            if not domain.startswith(("http://", "https://")):
+                domain = f"https://{domain}"
+            return f"{domain}/{name.lstrip('/')}"
 
         endpoint = getattr(settings, "S3_PUBLIC_ENDPOINT_URL", "") or getattr(settings, "AWS_S3_ENDPOINT_URL", "")
         if endpoint and not endpoint.startswith(("http://", "https://")):
             endpoint = f"https://{endpoint}"
+
+        # Si l'endpoint public est un domaine CDN (ex: https://cdn.zola-ashe.com), servir directement sans le bucket
+        if endpoint:
+            parsed = urlparse(endpoint)
+            hostname = parsed.netloc or parsed.path
+            if "cdn." in hostname or (not hostname.endswith("r2.cloudflarestorage.com") and "minio" not in hostname and "api.zola-ashe.com" not in hostname):
+                return f"{endpoint.rstrip('/')}/{name.lstrip('/')}"
 
         try:
             client = boto3.client(

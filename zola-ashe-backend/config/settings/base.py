@@ -274,6 +274,15 @@ if USE_S3:
         _r2_pub_endpoint = f"https://{_r2_pub_endpoint}"
     S3_PUBLIC_ENDPOINT_URL = _r2_pub_endpoint
 
+    _r2_custom_domain = env("R2_CUSTOM_DOMAIN", default=env("AWS_S3_CUSTOM_DOMAIN", default=""))
+    if not _r2_custom_domain and _r2_pub_endpoint:
+        from urllib.parse import urlparse
+        parsed = urlparse(_r2_pub_endpoint)
+        hostname = parsed.netloc or parsed.path
+        if hostname and not hostname.endswith("r2.cloudflarestorage.com") and "minio" not in hostname and "api.zola-ashe.com" not in hostname:
+            _r2_custom_domain = hostname
+    AWS_S3_CUSTOM_DOMAIN = _r2_custom_domain
+
     AWS_S3_SIGNATURE_VERSION = "s3v4"
     # Path-style + région : indispensables pour MinIO (et compatibles R2). Sans
     # path-style, boto3 vise un sous-domaine bucket.endpoint introuvable en dev.

@@ -79,11 +79,21 @@ def generate_signed_url(key: str) -> str:
             return f"/media/{key.lstrip('/')}"
 
     import mimetypes
-
+    from urllib.parse import urlparse
     import boto3
     from botocore.client import Config
 
+    custom_domain = getattr(settings, "AWS_S3_CUSTOM_DOMAIN", "") or getattr(settings, "R2_CUSTOM_DOMAIN", "")
+    if custom_domain:
+        return default_storage.url(key)
+
     endpoint_url = getattr(settings, "S3_PUBLIC_ENDPOINT_URL", None) or getattr(settings, "AWS_S3_ENDPOINT_URL", None)
+    if endpoint_url:
+        parsed = urlparse(endpoint_url)
+        hostname = parsed.netloc or parsed.path
+        if "cdn." in hostname or (not hostname.endswith("r2.cloudflarestorage.com") and "minio" not in hostname and "api.zola-ashe.com" not in hostname):
+            return default_storage.url(key)
+
     aws_access_key_id = getattr(settings, "AWS_ACCESS_KEY_ID", "")
     aws_secret_access_key = getattr(settings, "AWS_SECRET_ACCESS_KEY", "")
     bucket_name = getattr(settings, "AWS_STORAGE_BUCKET_NAME", "") or getattr(settings, "MEDIA_BUCKET", "zola-media")
