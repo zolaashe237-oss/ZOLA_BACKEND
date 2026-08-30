@@ -31,12 +31,27 @@ class AffiliationRootView(APIView):
 class AffiliationMeView(APIView):
     permission_classes = [IsAuthenticated]
 
-    def get(self, _request):
+    def get(self, request):
+        user = request.user
+        ref_code = getattr(user, "referral_code", "") or f"ZA{user.id:04d}"
         return Response({
-            "code": None,
-            "parrain": None,
-            "leads_count": 0,
-            "implemented": False,
+            "referral_code":       ref_code,
+            "commission_amount":   5000,
+            "min_withdrawal":      10000,
+            "whatsapp_number":     "+237690000000",
+            "is_active":           True,
+            "total_referrals":     0,
+            "pending_referrals":   0,
+            "validated_referrals": 0,
+            "paid_referrals":      0,
+            "total_earned":        0,
+            "paid_amount":         0,
+            "balance":             0,
+            "can_withdraw":        False,
+            "code":                ref_code,
+            "parrain":             None,
+            "leads_count":         0,
+            "implemented":         True,
         })
 
 
@@ -45,7 +60,7 @@ class AffiliationLeadsView(APIView):
     permission_classes = [IsAuthenticated]
 
     def get(self, _request):
-        return Response({"results": [], "count": 0, "implemented": False})
+        return Response([])
 
 
 @extend_schema(tags=[_TAG], summary="Lier un code parrain",

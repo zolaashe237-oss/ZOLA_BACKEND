@@ -41,6 +41,7 @@ urlpatterns = [
     path("api/", include("apps.ai_quiz.urls")),
     path("api/memoir/", include("apps.memoir.urls")),
     path("api/affiliation/", include("apps.affiliation.urls")),
+    path("api/affiliate/", include("apps.affiliation.urls")),
 ]
 
 # En développement, servir les fichiers media uploadés localement.
