@@ -58,7 +58,13 @@ def create_checkout_link(product_id: str, amount: int, email: str,
         resp.raise_for_status()
         return resp.json()
     except requests.RequestException as exc:
-        raise SwinmoError(f"Échec de création du lien Swinmo : {exc}") from exc
+        detail = ""
+        if hasattr(exc, "response") and exc.response is not None:
+            try:
+                detail = f" — Réponse Swinmo : {exc.response.text}"
+            except Exception:
+                pass
+        raise SwinmoError(f"Échec de création du lien Swinmo : {exc}{detail}") from exc
 
 
 def extract_checkout_url(response: dict) -> str:
