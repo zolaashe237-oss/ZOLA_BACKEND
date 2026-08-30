@@ -174,6 +174,24 @@ class AdminFormationViewSet(viewsets.ModelViewSet):
         record(request.user, AuditAction.DELETE_CONTENT, target_type="Formation", target_id=formation.id)
         return Response(status=status.HTTP_204_NO_CONTENT)
 
+    @extend_schema(
+        tags=[_TAG],
+        summary="Suppression définitive d'une formation",
+        description="Supprime définitivement la formation et tous ses éléments associés en base.",
+        request=None,
+        responses={204: OpenApiResponse(description="Formation supprimée définitivement.")}
+    )
+    @action(detail=True, methods=["delete", "post"], url_path="hard-delete")
+    def hard_delete(self, request, pk=None):
+        """Suppression physique définitive de la formation."""
+        formation = self.get_object()
+        formation_id = formation.id
+        formation_title = formation.title
+        formation.delete()
+        record(request.user, AuditAction.DELETE_CONTENT, target_type="Formation",
+               target_id=formation_id, payload={"hard_deleted": True, "title": formation_title})
+        return Response(status=status.HTTP_204_NO_CONTENT)
+
     @extend_schema(tags=[_TAG], summary="Publier maintenant",
                    description="Force la publication immédiate de la formation (statut PUBLISHED).",
                    request=None, responses={200: AdminFormationSerializer})
