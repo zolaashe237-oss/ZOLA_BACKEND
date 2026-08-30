@@ -341,9 +341,11 @@ PRICE_ANNUEL     = env.int("PRICE_ANNUEL",     default=24000)     # 24 000 FCFA 
 DON_MIN_AMOUNT = env.int("DON_MIN_AMOUNT", default=500)           # plancher d'un don volontaire
 
 SWINMO_PRODUCT_INSCRIPTION = env("SWINMO_PRODUCT_INSCRIPTION", default="")
-SWINMO_PRODUCT_COTISATION = env("SWINMO_PRODUCT_COTISATION", default="")
-SWINMO_PRODUCT_ANNUEL     = env("SWINMO_PRODUCT_ANNUEL",     default="")
-SWINMO_PRODUCT_DON = env("SWINMO_PRODUCT_DON", default="")
+SWINMO_PRODUCT_COTISATION  = env("SWINMO_PRODUCT_COTISATION",  default="")
+SWINMO_PRODUCT_ANNUEL      = env("SWINMO_PRODUCT_ANNUEL",      default="")
+SWINMO_PRODUCT_BRANCHE_FEMME  = env("SWINMO_PRODUCT_BRANCHE_FEMME",  default="")
+SWINMO_PRODUCT_BRANCHE_ENFANT = env("SWINMO_PRODUCT_BRANCHE_ENFANT", default="")
+SWINMO_PRODUCT_DON         = env("SWINMO_PRODUCT_DON",         default="")
 
 # URL publique du front (pour rediriger vers la page de paiement).
 WEB_BASE_URL = env("WEB_BASE_URL", default="http://localhost:3000")
