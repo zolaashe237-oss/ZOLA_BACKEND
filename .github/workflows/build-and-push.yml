@@ -21,8 +21,11 @@ on:
 env:
   REGISTRY: ghcr.io
   # IMPORTANT : GHCR exige le namespace en minuscules.
-  # On reste sur le même image-name que la prod actuelle : pas de modif côté VPS.
-  IMAGE_NAME: ghcr.io/edwintchakounte/zola-ashe-backend
+  # Nouveau namespace suite à la migration vers l'org zolaashe237-oss
+  # (cf. DEPLOY_GHCR_2026-08-29.md). Côté VPS, `.env` prod doit exposer
+  # REGISTRY=ghcr.io/zolaashe237-oss pour que docker-compose.prod.yml pull
+  # cette image.
+  IMAGE_NAME: ghcr.io/zolaashe237-oss/zola-ashe-backend
 
 jobs:
   build:
