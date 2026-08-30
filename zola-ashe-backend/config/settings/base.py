@@ -204,6 +204,8 @@ SPECTACULAR_SETTINGS = {
         "FormationStatusEnum": "apps.content.models.FormationStatus",
         "PaymentKindEnum": "apps.billing.serializers.PURCHASE_KINDS",
         "ResourceStreamKindEnum": ["youtube", "file"],
+        "BrancheEnum": "apps.content.models.Branche",
+        "DifficultyEnum": "apps.ai_quiz.models.DifficultyLevel",
     },
     "SWAGGER_UI_SETTINGS": {"persistAuthorization": True, "docExpansion": "none", "filter": True},
     "TAGS": [
@@ -253,20 +255,25 @@ USE_S3 = env.bool("USE_S3", default=False)
 if USE_S3:
     STORAGES = {
         # Storage custom : les URLs signées pointent sur S3_PUBLIC_ENDPOINT_URL
-        # (nginx public), tandis que les uploads passent par AWS_S3_ENDPOINT_URL
-        # (interne minio:9000). Voir config/storages.py.
+        # (nginx public ou CDN), tandis que les uploads passent par AWS_S3_ENDPOINT_URL
+        # (interne minio:9000 ou Cloudflare R2). Voir config/storages.py.
         "default": {"BACKEND": "config.storages.PublicSignedS3Storage"},
         "staticfiles": {"BACKEND": "django.contrib.staticfiles.storage.StaticFilesStorage"},
     }
-    AWS_ACCESS_KEY_ID = env("R2_ACCESS_KEY_ID")
-    AWS_SECRET_ACCESS_KEY = env("R2_SECRET_ACCESS_KEY")
-    AWS_STORAGE_BUCKET_NAME = env("R2_BUCKET")
-    AWS_S3_ENDPOINT_URL = env("R2_ENDPOINT_URL")
-    # Endpoint utilisé pour SIGNER les URLs destinées au navigateur. En dev,
-    # l'upload passe par l'endpoint interne (minio:9000) mais le navigateur doit
-    # joindre MinIO via localhost:9000 — la signature S3 étant calculée hors-ligne,
-    # on peut signer pour cet host public. En prod, identique à l'endpoint.
-    S3_PUBLIC_ENDPOINT_URL = env("R2_PUBLIC_ENDPOINT_URL", default=env("R2_ENDPOINT_URL"))
+    AWS_ACCESS_KEY_ID = env("R2_ACCESS_KEY_ID", default="")
+    AWS_SECRET_ACCESS_KEY = env("R2_SECRET_ACCESS_KEY", default="")
+    AWS_STORAGE_BUCKET_NAME = env("R2_BUCKET", default=env("MEDIA_BUCKET", default="zola-media"))
+    
+    _r2_endpoint = env("R2_ENDPOINT_URL", default="")
+    if _r2_endpoint and not _r2_endpoint.startswith(("http://", "https://")):
+        _r2_endpoint = f"https://{_r2_endpoint}"
+    AWS_S3_ENDPOINT_URL = _r2_endpoint
+
+    _r2_pub_endpoint = env("R2_PUBLIC_ENDPOINT_URL", default=_r2_endpoint)
+    if _r2_pub_endpoint and not _r2_pub_endpoint.startswith(("http://", "https://")):
+        _r2_pub_endpoint = f"https://{_r2_pub_endpoint}"
+    S3_PUBLIC_ENDPOINT_URL = _r2_pub_endpoint
+
     AWS_S3_SIGNATURE_VERSION = "s3v4"
     # Path-style + région : indispensables pour MinIO (et compatibles R2). Sans
     # path-style, boto3 vise un sous-domaine bucket.endpoint introuvable en dev.
