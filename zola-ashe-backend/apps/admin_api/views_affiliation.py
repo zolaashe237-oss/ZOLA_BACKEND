@@ -114,3 +114,11 @@ class AdminAffiliateMarkPaidView(APIView):
     def post(self, request):
         ids = request.data.get("ids", [])
         return Response({"updated": len(ids)}, status=status.HTTP_200_OK)
+
+
+# Aliases pour compatibilité
+AffiliateConfigView = AdminAffiliateConfigView
+AffiliateStatsView = AdminAffiliateStatsView
+AffiliateReferralsView = AdminAffiliateReferralsView
+AffiliateMarkPaidView = AdminAffiliateMarkPaidView
+
