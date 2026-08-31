@@ -851,9 +851,13 @@ class YoutubeImportView(APIView):
                 {"detail": "Le champ `playlist_url` est requis."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
-        if not yt_service.extract_playlist_id(playlist_url):
+
+        is_playlist = bool(yt_service.extract_playlist_id(playlist_url))
+        is_video    = bool(yt_service.extract_video_id(playlist_url))
+
+        if not is_playlist and not is_video:
             return Response(
-                {"detail": "URL invalide — le paramètre `list=` est introuvable."},
+                {"detail": "URL invalide — doit être une URL de playlist ou de vidéo YouTube."},
                 status=status.HTTP_400_BAD_REQUEST,
             )
         if mode not in ("preview", "confirm"):
@@ -866,7 +870,10 @@ class YoutubeImportView(APIView):
 
         try:
             if mode == "preview":
-                data = yt_service.preview_playlist(playlist_url)
+                if is_playlist:
+                    data = yt_service.preview_playlist(playlist_url)
+                else:
+                    data = yt_service.preview_single_video(playlist_url)
             elif import_mode == "chapter":
                 formation_id = request.data.get("formation_id")
                 if not formation_id:
@@ -882,9 +889,15 @@ class YoutubeImportView(APIView):
                         {"detail": f"Formation {formation_id} introuvable."},
                         status=status.HTTP_400_BAD_REQUEST,
                     )
-                data = yt_service.import_playlist_as_chapter(playlist_url, int(formation_id))
+                if is_playlist:
+                    data = yt_service.import_playlist_as_chapter(playlist_url, int(formation_id))
+                else:
+                    data = yt_service.import_single_video_as_chapter(playlist_url, int(formation_id))
             else:
-                data = yt_service.import_playlist(playlist_url)
+                if is_playlist:
+                    data = yt_service.import_playlist(playlist_url)
+                else:
+                    data = yt_service.import_single_video(playlist_url)
             return Response(data)
 
         except ValueError as exc:

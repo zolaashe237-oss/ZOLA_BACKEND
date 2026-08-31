@@ -21,6 +21,21 @@ def extract_playlist_id(url: str) -> str | None:
     return match.group(1) if match else None
 
 
+_VIDEO_ID_RE = re.compile(
+    r"(?:youtube\.com/(?:watch\?(?:.*&)?v=|embed/|v/|shorts/)|youtu\.be/)"
+    r"([A-Za-z0-9_-]{11})"
+)
+
+
+def extract_video_id(url: str) -> str | None:
+    """Extrait l'ID d'une vidéo YouTube depuis une URL (toutes variantes)."""
+    # ID brut (11 chars)
+    if re.fullmatch(r"[A-Za-z0-9_-]{11}", url):
+        return url
+    match = _VIDEO_ID_RE.search(url)
+    return match.group(1) if match else None
+
+
 def _iso8601_to_sec(duration: str) -> int | None:
     """PT1H2M3S → 3723 secondes. Renvoie None si la durée est indisponible."""
     if not duration:
@@ -243,11 +258,110 @@ def _create_formation(preview: dict) -> tuple[object, int, int]:
     return formation, modules_created, courses_created
 
 
+# ── Vidéo unique ───────────────────────────────────────────────────────────────
+
+def _fetch_video_info(yt, video_id: str) -> dict:
+    """Récupère titre, miniature et durée d'une seule vidéo YouTube."""
+    resp = yt.videos().list(part="snippet,contentDetails", id=video_id).execute()
+    items = resp.get("items", [])
+    if not items:
+        raise ValueError(f"Vidéo introuvable ou privée (id : {video_id}).")
+    item = items[0]
+    snippet = item["snippet"]
+    return {
+        "video_id":      video_id,
+        "title":         snippet["title"],
+        "thumbnail_url": _best_thumb(snippet.get("thumbnails", {}), video_id),
+        "duration_sec":  _iso8601_to_sec(item["contentDetails"].get("duration", "")),
+    }
+
+
+def _build_single_video_preview(video_url: str) -> dict:
+    video_id = extract_video_id(video_url)
+    if not video_id:
+        raise ValueError("URL invalide — ID vidéo YouTube non reconnu.")
+    yt = _build_client()
+    info = _fetch_video_info(yt, video_id)
+    course = {
+        "title":         info["title"],
+        "youtube_url":   f"https://www.youtube.com/watch?v={video_id}",
+        "duration_sec":  info["duration_sec"],
+        "thumbnail_url": info["thumbnail_url"],
+    }
+    return {
+        "formation_title": info["title"],
+        "playlist_url":    video_url,
+        "cover_url":       info["thumbnail_url"],
+        "total_videos":    1,
+        "preview_count":   1,
+        "truncated":       False,
+        "modules": [{"title": "Module 1", "courses": [course]}],
+    }
+
+
 # ── Points d'entrée publics ────────────────────────────────────────────────────
 
 def preview_playlist(playlist_url: str) -> dict:
     """Renvoie la structure de preview sans rien écrire en base."""
     return _build_preview_data(playlist_url)
+
+
+def preview_single_video(video_url: str) -> dict:
+    """Preview d'une vidéo unique sans écriture en base."""
+    return _build_single_video_preview(video_url)
+
+
+def import_single_video(video_url: str) -> dict:
+    """Crée une Formation avec un Module et un Course depuis une vidéo YouTube unique."""
+    from apps.admin_api.serializers import AdminFormationSerializer
+
+    preview = _build_single_video_preview(video_url)
+    formation, modules_created, courses_created = _create_formation(preview)
+    return {
+        "formation":       AdminFormationSerializer(formation).data,
+        "modules_created": modules_created,
+        "courses_created": courses_created,
+    }
+
+
+def import_single_video_as_chapter(video_url: str, formation_id: int) -> dict:
+    """Ajoute une vidéo unique comme nouveau chapitre (Module) dans une Formation existante."""
+    from apps.content.models import Course, Formation, Module, Resource, ResourceType, VideoSource
+
+    video_id = extract_video_id(video_url)
+    if not video_id:
+        raise ValueError("URL invalide — ID vidéo YouTube non reconnu.")
+
+    yt = _build_client()
+    info = _fetch_video_info(yt, video_id)
+
+    with transaction.atomic():
+        formation = Formation.objects.get(pk=formation_id)
+        next_order = formation.modules.filter(parent=None).count() + 1
+        module = Module.objects.create(
+            formation=formation,
+            title=info["title"],
+            order=next_order,
+            parent=None,
+        )
+        course = Course.objects.create(module=module, title=info["title"], order=0)
+        Resource.objects.create(
+            course=course,
+            title=info["title"],
+            resource_type=ResourceType.VIDEO,
+            video_source=VideoSource.YOUTUBE,
+            youtube_url=f"https://www.youtube.com/watch?v={video_id}",
+            duration_sec=info["duration_sec"],
+            thumbnail_url=info["thumbnail_url"],
+            order=0,
+        )
+
+    return {
+        "module_id":       module.id,
+        "module_title":    module.title,
+        "formation_id":    formation_id,
+        "courses_created": 1,
+    }
 
 
 def import_playlist(playlist_url: str) -> dict:
