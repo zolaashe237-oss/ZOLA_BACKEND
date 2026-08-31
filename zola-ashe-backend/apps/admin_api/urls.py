@@ -81,6 +81,8 @@ urlpatterns = [
 
     # Paramètres globaux
     path("settings/", vset.AdminGlobalSettingsView.as_view(), name="admin-settings"),
+    path("config/social-links/", vset.AdminGlobalSettingsView.as_view(), name="admin-config-social-links"),
+    path("settings/social-links/", vset.AdminGlobalSettingsView.as_view(), name="admin-settings-social-links"),
 
     # Templates WhatsApp
     path("whatsapp/templates/", vw.WhatsAppTemplateListCreateView.as_view(), name="admin-whatsapp-template-list"),

@@ -24,4 +24,5 @@ urlpatterns = [
     
     # Paramètres globaux publics
     path("settings/", views.GlobalSettingsView.as_view(), name="settings"),
+    path("config/social-links/", views.GlobalSettingsView.as_view(), name="config-social-links"),
 ]
