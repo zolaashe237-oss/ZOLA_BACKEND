@@ -107,7 +107,7 @@ services:
     expose:
       - "8000"
     healthcheck:
-      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen(urllib.request.Request('http://localhost:8000/api/schema/', headers={'X-Forwarded-Proto':'https'}), timeout=2).status == 200 else 1)\""]
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; sys.exit(0 if urllib.request.urlopen(urllib.request.Request('http://localhost:8000/health/', headers={'X-Forwarded-Proto':'https'}), timeout=2).status == 200 else 1)\""]
       interval: 10s
       timeout: 5s
       retries: 20

@@ -19,6 +19,7 @@ def health(_request):
 
 urlpatterns = [
     path("health/", health),
+    path("api/health/", health),
     path("django-admin/", admin.site.urls),
 
     # Documentation API (OpenAPI 3) — accès libre

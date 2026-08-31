@@ -73,9 +73,47 @@ class AdminAffiliateConfigView(APIView):
         return self.patch(request)
 
 
-@extend_schema(tags=[_TAG], summary="Statistiques globales d'affiliation")
+class AdminAffiliateStatsSerializer(serializers.Serializer):
+    total_referrals = serializers.IntegerField(default=0)
+    pending_referrals = serializers.IntegerField(default=0)
+    validated_referrals = serializers.IntegerField(default=0)
+    paid_referrals = serializers.IntegerField(default=0)
+    total_commissions = serializers.FloatField(default=0.0)
+    paid_commissions = serializers.FloatField(default=0.0)
+    pending_commissions = serializers.FloatField(default=0.0)
+    top_referrers = serializers.ListField(child=serializers.DictField(), default=list)
+
+
+class AdminReferralItemSerializer(serializers.Serializer):
+    id = serializers.IntegerField(required=False)
+    referrer_name = serializers.CharField(required=False)
+    referred_name = serializers.CharField(required=False)
+    amount = serializers.FloatField(required=False)
+    status = serializers.CharField(required=False)
+    created_at = serializers.DateTimeField(required=False)
+
+
+class AdminReferralsPaginatedSerializer(serializers.Serializer):
+    count = serializers.IntegerField()
+    next = serializers.CharField(allow_null=True)
+    previous = serializers.CharField(allow_null=True)
+    results = AdminReferralItemSerializer(many=True)
+    page = serializers.IntegerField()
+    page_size = serializers.IntegerField()
+
+
+class AdminAffiliateMarkPaidRequestSerializer(serializers.Serializer):
+    ids = serializers.ListField(child=serializers.IntegerField())
+
+
+class AdminAffiliateMarkPaidResponseSerializer(serializers.Serializer):
+    updated = serializers.IntegerField()
+
+
+@extend_schema(tags=[_TAG], summary="Statistiques globales d'affiliation", responses={200: AdminAffiliateStatsSerializer})
 class AdminAffiliateStatsView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
+    serializer_class = AdminAffiliateStatsSerializer
 
     def get(self, request):
         return Response({
@@ -90,9 +128,10 @@ class AdminAffiliateStatsView(APIView):
         })
 
 
-@extend_schema(tags=[_TAG], summary="Liste paginée des parrainages")
+@extend_schema(tags=[_TAG], summary="Liste paginée des parrainages", responses={200: AdminReferralsPaginatedSerializer})
 class AdminAffiliateReferralsView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
+    serializer_class = AdminReferralsPaginatedSerializer
 
     def get(self, request):
         page = int(request.query_params.get("page", 1))
@@ -107,9 +146,15 @@ class AdminAffiliateReferralsView(APIView):
         })
 
 
-@extend_schema(tags=[_TAG], summary="Marquer des commissions comme payées")
+@extend_schema(
+    tags=[_TAG],
+    summary="Marquer des commissions comme payées",
+    request=AdminAffiliateMarkPaidRequestSerializer,
+    responses={200: AdminAffiliateMarkPaidResponseSerializer}
+)
 class AdminAffiliateMarkPaidView(APIView):
     permission_classes = [IsAuthenticated, IsAdmin]
+    serializer_class = AdminAffiliateMarkPaidResponseSerializer
 
     def post(self, request):
         ids = request.data.get("ids", [])
