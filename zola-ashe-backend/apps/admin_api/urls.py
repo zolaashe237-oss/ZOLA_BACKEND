@@ -4,13 +4,14 @@ from rest_framework.routers import DefaultRouter
 
 from apps.blog.views import AdminArticleViewSet
 
+from . import views_affiliate as vaff
+from . import views_community as vcom
 from . import views_content as vc
 from . import views_finance as vf
 from . import views_members as vm
 from . import views_memoir as vmem
 from . import views_moderation as vmod
 from . import views_progression as vp
-from . import views_community as vcom
 from . import views_settings as vset
 from . import views_whatsapp as vw
 from . import views_affiliation as vaff
@@ -50,6 +51,7 @@ urlpatterns = [
     path("formations/import-youtube/", vc.YoutubeImportView.as_view(), name="admin-youtube-import"),
     path("content/upload/", vc.ContentUploadView.as_view(), name="admin-content-upload"),
     path("quiz/results/", vc.AdminQuizResultListView.as_view(), name="admin-quiz-results"),
+    path("quiz/results/<int:pk>/answers/", vc.QuizResultAnswersView.as_view(), name="admin-quiz-result-answers"),
     path("quiz/score/", vc.QuizScoreView.as_view(), name="admin-quiz-score"),
     path("quiz/reset/", vc.ResetQuizView.as_view(), name="admin-quiz-reset"),
 
@@ -65,8 +67,17 @@ urlpatterns = [
     path("memoir/<int:pk>/", vmem.AdminMemoirDetailView.as_view(), name="admin-memoir-detail"),
     path("memoir/<int:pk>/docx/", vmem.AdminMemoirDocxView.as_view(), name="admin-memoir-docx"),
 
+    # Notifications système
+    path("notifications/broadcast/", vcom.AdminBroadcastNotifView.as_view(), name="admin-notif-broadcast"),
+
     # Audit
     path("audit/", vmod.AuditLogListView.as_view(), name="admin-audit"),
+
+    # Affiliation & Parrainage
+    path("affiliate/config/",           vaff.AffiliateConfigView.as_view(),       name="admin-affiliate-config"),
+    path("affiliate/stats/",            vaff.AffiliateStatsView.as_view(),         name="admin-affiliate-stats"),
+    path("affiliate/referrals/",        vaff.AffiliateReferralListView.as_view(),  name="admin-affiliate-referrals"),
+    path("affiliate/referrals/pay/",    vaff.AffiliateMarkPaidView.as_view(),      name="admin-affiliate-pay"),
 
     # Progression des membres
     path("progression/kpis/", vp.ProgressionKpisView.as_view(), name="admin-progression-kpis"),

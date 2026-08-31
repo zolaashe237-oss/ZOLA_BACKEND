@@ -1,0 +1,7 @@
+from django.apps import AppConfig
+
+
+class AffiliateAppConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "apps.affiliate"
+    verbose_name = "Affiliation & Parrainage"

@@ -110,7 +110,15 @@ class RegisterView(generics.GenericAPIView):
     def post(self, request):
         serializer = self.get_serializer(data=request.data)
         serializer.is_valid(raise_exception=True)
+        referral_code = serializer.validated_data.pop("referral_code", "") or ""
         user = serializer.save()
+        # Parrainage : on tente de lier le filleul au parrain (silencieux en cas d'échec).
+        if referral_code:
+            try:
+                from apps.affiliate.services import register_referral
+                register_referral(referral_code.upper().strip(), user)
+            except Exception:
+                pass
         code = generate_otp(user)
         send_otp_email.delay(user.email, code, "verification")
         body = {"detail": "Compte créé. Un code de vérification a été envoyé par email."}

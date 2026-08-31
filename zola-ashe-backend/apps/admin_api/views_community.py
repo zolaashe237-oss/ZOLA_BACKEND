@@ -168,3 +168,36 @@ class AdminCommunityPostViewSet(viewsets.ModelViewSet):
         record(request.user, AuditAction.DELETE_CONTENT, target_type="Post",
                target_id=post.id, reason=reason)
         return Response({"status": "MODERE"})
+
+
+# ─── Notifications système (broadcast) ───────────────────────────────────────
+
+class AdminBroadcastNotifView(APIView):
+    """POST /api/admin/notifications/broadcast/ — envoie une notif SYSTEME aux membres actifs."""
+    permission_classes = [IsAdmin]
+
+    def post(self, request):
+        from apps.notifications.models import Notification, NotifType
+        from apps.accounts.models import User, Role, UserStatus
+
+        title   = (request.data.get("title") or "").strip()
+        body    = (request.data.get("body")  or "").strip()
+        user_id = request.data.get("user_id")
+
+        if not title:
+            return Response({"detail": "Le titre est requis."}, status=400)
+
+        qs = User.objects.filter(role=Role.MEMBER, status=UserStatus.ACTIF)
+        if user_id:
+            qs = qs.filter(pk=user_id)
+
+        notifs = [
+            Notification(user=u, type=NotifType.SYSTEME, title=title, body=body)
+            for u in qs
+        ]
+        Notification.objects.bulk_create(notifs)
+
+        record(request.user, AuditAction.SEND_NOTIFICATION,
+               reason=title,
+               payload={"sent": len(notifs), "user_id": user_id})
+        return Response({"sent": len(notifs)})

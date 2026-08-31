@@ -23,10 +23,13 @@ class GenerationRequestSerializer(serializers.Serializer):
     source_text = serializers.CharField(required=False, allow_blank=True)
 
     nb_questions = serializers.IntegerField(required=False, min_value=3, max_value=20, default=5)
+    nb_qcm_multi = serializers.IntegerField(required=False, min_value=0, max_value=10, default=0)
     ratio_qcm_qro = serializers.FloatField(required=False, min_value=0.0, max_value=1.0, default=0.6)
     difficulty = serializers.ChoiceField(
         required=False, choices=DifficultyLevel.choices, default=DifficultyLevel.INTERMEDIAIRE
     )
+    formation_title = serializers.CharField(required=False, allow_blank=True, max_length=300)
+    module_title = serializers.CharField(required=False, allow_blank=True, max_length=300)
 
     def validate_module_id(self, value: int) -> int:
         if not Module.objects.filter(pk=value).exists():

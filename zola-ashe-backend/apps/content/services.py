@@ -7,6 +7,7 @@ via `Formation.access_subscription_types` (le type `MEMBRE` ouvre l'accès aux
 membres actifs).
 """
 import logging
+import re
 
 from django.conf import settings
 from django.core.files.storage import default_storage
@@ -19,20 +20,48 @@ logger = logging.getLogger(__name__)
 
 # ─── Transcription YouTube ────────────────────────────────────────────────────
 
+_YT_ID_PATTERNS = [
+    re.compile(r"[?&]v=([^&\s]+)"),
+    re.compile(r"youtu\.be/([^?&\s]+)"),
+    re.compile(r"/embed/([^?&\s]+)"),
+    re.compile(r"/shorts/([^?&\s]+)"),
+]
+
+
+def _extract_youtube_id(url: str) -> str | None:
+    for pattern in _YT_ID_PATTERNS:
+        m = pattern.search(url)
+        if m:
+            return m.group(1)
+    return None
+
 
 def fetch_youtube_transcript(youtube_url: str) -> str:
     """Récupère la transcription d'une vidéo YouTube. Retourne '' en cas d'échec.
 
-    Utilise l'extracteur officiel (`apps.ai_quiz.extractors.youtube`) qui
-    passe par l'API Data v3 avec OAuth. Le compte OAuth doit être
-    propriétaire de la vidéo. Échec silencieux pour ne pas bloquer la
-    sauvegarde d'une ressource (l'admin peut compléter à la main).
+    Préférence : français → anglais → première langue disponible.
+    Échoue silencieusement pour ne pas bloquer la sauvegarde d'une ressource.
+    Compatible youtube-transcript-api >= 0.6 (API instance-based).
     """
-    if not youtube_url:
+    video_id = _extract_youtube_id(youtube_url)
+    if not video_id:
         return ""
     try:
-        from apps.ai_quiz.extractors.youtube import extract_youtube_transcript
-        return extract_youtube_transcript(youtube_url)
+        from youtube_transcript_api import YouTubeTranscriptApi
+        api = YouTubeTranscriptApi()
+        try:
+            # Tentative avec langues préférées (fr en priorité, puis en)
+            transcript = api.fetch(video_id, languages=["fr", "fr-FR", "fr-CA", "en"])
+        except Exception:
+            # Aucune langue demandée disponible — on prend la première trouvée
+            transcript_list = api.list(video_id)
+            first = next(iter(transcript_list))
+            transcript = first.fetch()
+        # Les snippets exposent .text (>=0.6) ou ["text"] (<=0.5)
+        return " ".join(
+            s.text if hasattr(s, "text") else s.get("text", "")
+            for s in transcript
+        ).strip()
     except Exception as exc:
         logger.debug("Transcript fetch failed for %s: %s", youtube_url, exc)
         return ""
@@ -263,12 +292,17 @@ def grade_quiz(quiz: Quiz, answers: dict) -> tuple[int, int, int]:
     return score, correct, total
 
 
-def record_quiz_result(user, quiz: Quiz, score: int) -> QuizResult:
+def record_quiz_result(
+    user, quiz: Quiz, score: int,
+    answers: dict | None = None,
+    qro_answers: dict | None = None,
+) -> QuizResult:
     """Enregistre une tentative et applique RG-23 à RG-26.
 
     - tentatives illimitées, +1 à chaque soumission (RG-24) ;
     - on conserve le meilleur score (RG-25) ;
     - validation si score >= seuil ; jamais de rétrogradation (RG-26).
+    - last_answers stocke les réponses de la dernière tentative (admin).
     """
     result, _ = QuizResult.objects.get_or_create(user=user, quiz=quiz)
     result.attempts += 1
@@ -277,5 +311,10 @@ def record_quiz_result(user, quiz: Quiz, score: int) -> QuizResult:
     if not result.validated and result.score >= quiz.pass_threshold:
         result.validated = True
         result.validated_at = timezone.now()
+    if answers is not None or qro_answers is not None:
+        result.last_answers = {
+            "qcm": {str(k): [int(c) for c in v] for k, v in (answers or {}).items()},
+            "qro": {str(k): v for k, v in (qro_answers or {}).items()},
+        }
     result.save()
     return result

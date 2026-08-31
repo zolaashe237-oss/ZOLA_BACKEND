@@ -285,19 +285,24 @@ class AdminQuestionSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Question
-        fields = ("id", "text", "multiple", "order", "choices")
+        fields = ("id", "text", "multiple", "order", "type", "criteria", "choices")
         read_only_fields = ("id",)
 
 
 class AdminQuizSerializer(serializers.ModelSerializer):
     """QCM avec questions/options imbriquées (réécriture complète à l'update)."""
     questions = AdminQuestionSerializer(many=True, required=False)
+    status = serializers.SerializerMethodField()
 
     class Meta:
         model = Quiz
         fields = ("id", "course", "formation", "title", "pass_threshold", "active",
-                  "questions", "created_at")
-        read_only_fields = ("id", "created_at")
+                  "questions", "created_at",
+                  "generated_by_ai", "ai_source", "niveau", "rang", "status")
+        read_only_fields = ("id", "created_at", "status")
+
+    def get_status(self, obj) -> str:
+        return "PUBLISHED" if obj.active else "DRAFT"
 
     def validate(self, attrs):
         course = attrs.get("course") or getattr(self.instance, "course", None)
@@ -345,6 +350,7 @@ class ResetQuizSerializer(serializers.Serializer):
 # ─── Publication admin (annonces) ────────────────────────────────────────────
 
 class AdminPostSerializer(serializers.Serializer):
+    title = serializers.CharField(max_length=200, required=False, allow_blank=True)
     text = serializers.CharField(max_length=2000, required=False, allow_blank=True)
     audience = serializers.ChoiceField(choices=["TOUS", "FEMME", "ENFANT"], default="TOUS")
     is_pinned = serializers.BooleanField(default=False)

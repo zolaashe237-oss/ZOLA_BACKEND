@@ -52,6 +52,7 @@ LOCAL_APPS = [
     "apps.ai_quiz",
     "apps.memoir",
     "apps.affiliation",
+    "apps.affiliate",
 ]
 
 INSTALLED_APPS = DJANGO_APPS + THIRD_PARTY_APPS + LOCAL_APPS

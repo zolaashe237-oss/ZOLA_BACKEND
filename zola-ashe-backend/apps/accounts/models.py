@@ -46,6 +46,10 @@ class User(AbstractBaseUser, PermissionsMixin):
     status = models.CharField(max_length=10, choices=UserStatus.choices, default=UserStatus.RESTREINT)
     status_changed_at = models.DateTimeField(default=timezone.now)
 
+    referral_code = models.CharField(
+        max_length=12, unique=True, null=True, blank=True, db_index=True,
+        help_text="Code de parrainage unique (généré automatiquement).")
+
     email_verified = models.BooleanField(default=False)
     nb_warnings = models.PositiveIntegerField(default=0)  # modération (RG-32)
 

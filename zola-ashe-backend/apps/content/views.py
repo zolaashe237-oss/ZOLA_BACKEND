@@ -134,6 +134,8 @@ class FormationViewSet(viewsets.ReadOnlyModelViewSet):
         from django.db.models import Q
         user = self.request.user
         qs = visible_formations_qs()
+        if branch := self.request.query_params.get("branch"):
+            qs = qs.filter(branch=branch)
         if category := self.request.query_params.get("category"):
             qs = qs.filter(category=category)
         if search := self.request.query_params.get("search"):
@@ -267,11 +269,44 @@ class QuizViewSet(viewsets.ReadOnlyModelViewSet):
         serializer = QuizSubmitSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         score, correct, total = grade_quiz(quiz, serializer.validated_data["answers"])
-        result = record_quiz_result(request.user, quiz, score)
+        qro_answers = serializer.validated_data.get("qro_answers") or {}
+
+        qro_feedback = {}
+        qro_pending = False
+        if qro_answers:
+            from apps.ai_quiz.views import _evaluate_qro
+            from apps.ai_quiz.models import AIQROAnswer, AIQuestion, QROVerdict
+            for q_id_str, answer_text in qro_answers.items():
+                if not answer_text.strip():
+                    continue
+                try:
+                    question = quiz.questions.get(pk=int(q_id_str), type="QRO")
+                except Exception:
+                    continue
+                verdict, qro_score, justification = _evaluate_qro(
+                    source_text="",
+                    question_text=question.text,
+                    criteria=list(question.criteria or []),
+                    student_answer=answer_text.strip(),
+                )
+                qro_feedback[q_id_str] = {
+                    "score": qro_score, "justification": justification,
+                    "hint": None, "verdict": verdict,
+                }
+                if verdict == QROVerdict.NEEDS_REVIEW:
+                    qro_pending = True
+
+        result = record_quiz_result(
+            request.user, quiz, score,
+            answers=serializer.validated_data.get("answers"),
+            qro_answers=qro_answers if qro_answers else None,
+        )
         return Response({
             "score": result.score, "last_score": score, "correct": correct, "total": total,
             "attempts": result.attempts, "validated": result.validated,
             "validated_at": result.validated_at, "pass_threshold": quiz.pass_threshold,
+            "qro_pending": qro_pending,
+            "qro_feedback": qro_feedback or None,
         })
 
     @extend_schema(
