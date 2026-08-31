@@ -82,12 +82,6 @@ prod-renew-cert:     ## Force un renouvellement immédiat des certificats
 	$(COMPOSE_PROD) run --rm certbot renew --webroot --webroot-path=/var/www/certbot --force-renewal
 	$(COMPOSE_PROD) exec nginx nginx -s reload
 
-prod-migrate:        ## Applique les migrations Django en production (Neon)
-	$(COMPOSE_PROD) run --rm backend python manage.py migrate
-
-prod-bootstrap:      ## Initialise le compte admin et données de base en production
-	$(COMPOSE_PROD) run --rm backend python manage.py bootstrap_prod
-
 # ─── Sauvegardes ───
 backup:              ## Dump compressé de la base Postgres (-> backups/)
 	./scripts/backup-db.sh
