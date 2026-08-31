@@ -120,5 +120,7 @@ class AdminAffiliateMarkPaidView(APIView):
 AffiliateConfigView = AdminAffiliateConfigView
 AffiliateStatsView = AdminAffiliateStatsView
 AffiliateReferralsView = AdminAffiliateReferralsView
+AffiliateReferralListView = AdminAffiliateReferralsView
 AffiliateMarkPaidView = AdminAffiliateMarkPaidView
+
 
