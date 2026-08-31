@@ -91,12 +91,10 @@ def publish_due_formations() -> int:
 # ─── Streaming sécurisé (RG-17, RG-19) ──────────────────────────────────────
 
 def generate_signed_url(key: str) -> str:
-    """URL signée (MinIO/R2) valable 1h pour un média, en lecture `inline`.
+    """URL signée (MinIO/R2) valable 1h pour un média protégé, en lecture `inline`.
 
-    Jamais l'URL directe du bucket. La signature est faite contre
-    `S3_PUBLIC_ENDPOINT_URL` (host joignable par le navigateur) ; le calcul est
-    hors-ligne, donc indépendant de l'endpoint interne d'upload. En dev sans S3
-    (USE_S3=False), retombe sur l'URL du stockage local.
+    Pour les documents et flux privés (PDFs bibliothèque, vidéos protégées),
+    génère une URL pré-signée S3v4 avec expiration (1h) contre l'endpoint R2.
     """
     if not key:
         return ""
@@ -108,25 +106,18 @@ def generate_signed_url(key: str) -> str:
             return f"/media/{key.lstrip('/')}"
 
     import mimetypes
-    from urllib.parse import urlparse
     import boto3
     from botocore.client import Config
 
-    custom_domain = getattr(settings, "AWS_S3_CUSTOM_DOMAIN", "") or getattr(settings, "R2_CUSTOM_DOMAIN", "")
-    if custom_domain:
-        return default_storage.url(key)
-
-    endpoint_url = getattr(settings, "S3_PUBLIC_ENDPOINT_URL", None) or getattr(settings, "AWS_S3_ENDPOINT_URL", None)
-    if endpoint_url:
-        parsed = urlparse(endpoint_url)
-        hostname = parsed.netloc or parsed.path
-        if "cdn." in hostname or (not hostname.endswith("r2.cloudflarestorage.com") and "minio" not in hostname and "api.zola-ashe.com" not in hostname):
-            return default_storage.url(key)
+    # Pour les documents privés, la signature est TOUJOURS générée contre l'endpoint R2 privé
+    endpoint_url = getattr(settings, "AWS_S3_ENDPOINT_URL", None) or getattr(settings, "S3_PUBLIC_ENDPOINT_URL", None)
+    if endpoint_url and not endpoint_url.startswith(("http://", "https://")):
+        endpoint_url = f"https://{endpoint_url}"
 
     aws_access_key_id = getattr(settings, "AWS_ACCESS_KEY_ID", "")
     aws_secret_access_key = getattr(settings, "AWS_SECRET_ACCESS_KEY", "")
-    bucket_name = getattr(settings, "AWS_STORAGE_BUCKET_NAME", "") or getattr(settings, "MEDIA_BUCKET", "zola-media")
-    region_name = getattr(settings, "AWS_S3_REGION_NAME", "us-east-1")
+    bucket_name = getattr(settings, "AWS_STORAGE_BUCKET_NAME", "") or getattr(settings, "MEDIA_BUCKET", "zola-ashe-private")
+    region_name = getattr(settings, "AWS_S3_REGION_NAME", "auto")
     expire_in = getattr(settings, "AWS_QUERYSTRING_EXPIRE", 3600)
 
     try:
@@ -140,7 +131,7 @@ def generate_signed_url(key: str) -> str:
         )
         params = {
             "Bucket": bucket_name,
-            "Key": key,
+            "Key": key.lstrip("/"),
             "ResponseContentDisposition": "inline",
         }
         mime, _ = mimetypes.guess_type(key)
@@ -151,10 +142,7 @@ def generate_signed_url(key: str) -> str:
         )
     except Exception as exc:
         logger.error("Échec génération URL signée S3 (key=%s): %s", key, exc)
-        try:
-            return default_storage.url(key)
-        except Exception:
-            return f"/{bucket_name}/{key.lstrip('/')}"
+        return f"/{bucket_name}/{key.lstrip('/')}"
 
 
 # ─── Accès à la formation (abonnement, RG-22 / RG-10) ───────────────────────
