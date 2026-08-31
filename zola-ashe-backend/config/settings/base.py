@@ -263,7 +263,13 @@ if USE_S3:
     }
     AWS_ACCESS_KEY_ID = env("R2_ACCESS_KEY_ID", default="")
     AWS_SECRET_ACCESS_KEY = env("R2_SECRET_ACCESS_KEY", default="")
-    AWS_STORAGE_BUCKET_NAME = env("R2_BUCKET", default=env("MEDIA_BUCKET", default="zola-media"))
+    
+    # Bucket public pour les médias standards (avatars, posts, couvertures)
+    MEDIA_BUCKET = env("MEDIA_BUCKET", default="zola-ashe-files")
+    AWS_STORAGE_BUCKET_NAME = MEDIA_BUCKET
+    
+    # Bucket privé pour les ressources protégées (PDFs bibliothèque, cours)
+    R2_PRIVATE_BUCKET = env("R2_PRIVATE_BUCKET", default=env("R2_BUCKET", default="zola-ashe-private"))
     
     _r2_endpoint = env("R2_ENDPOINT_URL", default="")
     if _r2_endpoint and not _r2_endpoint.startswith(("http://", "https://")):

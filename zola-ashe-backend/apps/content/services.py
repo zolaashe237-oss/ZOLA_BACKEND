@@ -116,7 +116,7 @@ def generate_signed_url(key: str) -> str:
 
     aws_access_key_id = getattr(settings, "AWS_ACCESS_KEY_ID", "")
     aws_secret_access_key = getattr(settings, "AWS_SECRET_ACCESS_KEY", "")
-    bucket_name = getattr(settings, "AWS_STORAGE_BUCKET_NAME", "") or getattr(settings, "MEDIA_BUCKET", "zola-ashe-private")
+    bucket_name = getattr(settings, "R2_PRIVATE_BUCKET", getattr(settings, "AWS_STORAGE_BUCKET_NAME", "zola-ashe-private"))
     region_name = getattr(settings, "AWS_S3_REGION_NAME", "auto")
     expire_in = getattr(settings, "AWS_QUERYSTRING_EXPIRE", 3600)
 
