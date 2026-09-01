@@ -22,7 +22,7 @@ class RegisterSerializer(serializers.Serializer):
     password2 = serializers.CharField(write_only=True)
     phone = serializers.CharField(max_length=30, required=False, allow_blank=True)
     country = serializers.CharField(max_length=100, required=False, allow_blank=True)
-    referral_code = serializers.CharField(max_length=12, required=False, allow_blank=True)
+    referral_code = serializers.CharField(max_length=50, required=False, allow_blank=True)
 
     def validate_email(self, value):
         if User.objects.filter(email__iexact=value).exists():

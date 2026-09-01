@@ -68,6 +68,15 @@ class User(AbstractBaseUser, PermissionsMixin):
     def __str__(self):
         return self.email
 
+    def save(self, *args, **kwargs):
+        if not self.referral_code:
+            try:
+                from apps.affiliate.services import _generate_unique_code
+                self.referral_code = _generate_unique_code()
+            except Exception:
+                pass
+        super().save(*args, **kwargs)
+
     def set_status(self, status: str):
         self.status = status
         self.status_changed_at = timezone.now()

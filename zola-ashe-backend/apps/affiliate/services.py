@@ -35,12 +35,16 @@ def register_referral(referral_code: str, new_user) -> bool:
     from apps.accounts.models import User
     from .models import Referral, AffiliateConfig
 
+    code = str(referral_code).strip()
+    if not code:
+        return False
+
     config = AffiliateConfig.get()
-    if not config.is_active:
+    if config and not config.is_active:
         return False
 
     referrer = (User.objects
-                .filter(referral_code=referral_code)
+                .filter(referral_code__iexact=code)
                 .exclude(id=new_user.id)
                 .first())
     if not referrer:
