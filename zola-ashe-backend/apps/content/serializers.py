@@ -13,6 +13,7 @@ from .services import (
     course_state,
     final_exam_unlocked,
     formation_accessible,
+    formation_prerequisite_met,
     generate_signed_url,
     module_state,
 )
@@ -88,12 +89,13 @@ class FormationListSerializer(serializers.ModelSerializer):
     cover = serializers.SerializerMethodField()
     is_reserved = serializers.BooleanField(read_only=True)
     locked = serializers.SerializerMethodField()
+    lock_reason = serializers.SerializerMethodField()
     module_count = serializers.SerializerMethodField()
 
     class Meta:
         model = Formation
         fields = ("id", "slug", "title", "description", "category", "branch", "level",
-                  "cover", "is_reserved", "locked", "module_count")
+                  "cover", "is_public", "is_reserved", "locked", "lock_reason", "module_count")
 
     def get_cover(self, obj) -> str:
         url = generate_signed_url(obj.cover_key) if obj.cover_key else obj.cover_url
@@ -103,9 +105,20 @@ class FormationListSerializer(serializers.ModelSerializer):
                 return request.build_absolute_uri(url)
         return url or ""
 
-    def get_locked(self, obj) -> bool:
+    def _lock_reason(self, obj) -> str | None:
+        user = self.context["request"].user
         types = self.context.get("accessible_sub_types")
-        return not formation_accessible(self.context["request"].user, obj, accessible_types=types)
+        if not formation_accessible(user, obj, accessible_types=types):
+            return "subscription"
+        if not formation_prerequisite_met(user, obj):
+            return "formation_prerequisite"
+        return None
+
+    def get_locked(self, obj) -> bool:
+        return self._lock_reason(obj) is not None
+
+    def get_lock_reason(self, obj) -> str | None:
+        return self._lock_reason(obj)
 
     def get_module_count(self, obj) -> int:
         return obj.modules.count()
@@ -131,7 +144,8 @@ class FormationDetailSerializer(serializers.ModelSerializer):
         return generate_signed_url(obj.cover_key) if obj.cover_key else obj.cover_url
 
     def get_locked(self, obj) -> bool:
-        return not self._accessible(obj)
+        user = self.context["request"].user
+        return not self._accessible(obj) or not formation_prerequisite_met(user, obj)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_modules(self, obj):
@@ -223,6 +237,14 @@ class LibraryPdfPublicSerializer(serializers.ModelSerializer):
                   "is_gratuit", "created_at")
 
     def get_cover(self, obj) -> str:
+        if obj.cover_key:
+            url = generate_signed_url(obj.cover_key)
+            if url:
+                if url.startswith("/"):
+                    request = self.context.get("request")
+                    if request:
+                        return request.build_absolute_uri(url)
+                return url
         url = obj.cover_url or ""
         if url and url.startswith("/"):
             request = self.context.get("request")

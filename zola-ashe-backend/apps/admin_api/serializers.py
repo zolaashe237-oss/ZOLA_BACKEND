@@ -492,7 +492,7 @@ class AdminLibraryPdfSerializer(serializers.ModelSerializer):
     class Meta:
         model = LibraryPdf
         fields = ("id", "title", "description", "category", "branche", "access_level",
-                  "bucket_key", "file_url", "cover_url", "nb_pages", "size_mo",
+                  "bucket_key", "file_url", "cover_key", "cover_url", "nb_pages", "size_mo",
                   "is_active", "is_gratuit", "created_at", "updated_at")
         read_only_fields = ("id", "created_at", "updated_at")
 
@@ -506,6 +506,19 @@ class AdminLibraryPdfSerializer(serializers.ModelSerializer):
             if request:
                 url = request.build_absolute_uri(url)
         return url
+
+    def to_representation(self, instance):
+        data = super().to_representation(instance)
+        if instance.cover_key:
+            from apps.content.services import generate_signed_url
+            resolved = generate_signed_url(instance.cover_key)
+            if resolved:
+                if resolved.startswith("/"):
+                    request = self.context.get("request")
+                    if request:
+                        resolved = request.build_absolute_uri(resolved)
+                data["cover_url"] = resolved
+        return data
 
 
 # ─── Sessions en direct (admin) ───────────────────────────────────────────────

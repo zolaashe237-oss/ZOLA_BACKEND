@@ -827,6 +827,54 @@ class QuizResultAnswersView(APIView):
         })
 
 
+# ── Réorganisation des formations ─────────────────────────────────────────────
+
+class FormationReorderView(APIView):
+    """
+    POST /api/admin/formations/reorder/
+
+    Corps : { "items": [{"id": 1, "order": 0}, {"id": 2, "order": 1}, ...] }
+    Met à jour le champ `order` de chaque formation en une seule transaction.
+    """
+    permission_classes = [IsAdmin]
+
+    @extend_schema(
+        tags=[_TAG],
+        summary="Réordonner les formations",
+        request=inline_serializer(
+            name="FormationReorderRequest",
+            fields={
+                "items": drf_serializers.ListField(
+                    child=inline_serializer(
+                        name="FormationReorderItem",
+                        fields={
+                            "id":    drf_serializers.IntegerField(),
+                            "order": drf_serializers.IntegerField(min_value=0),
+                        },
+                    )
+                )
+            },
+        ),
+        responses={200: inline_serializer(name="FormationReorderResponse",
+                                          fields={"detail": drf_serializers.CharField()})},
+    )
+    def post(self, request):
+        from django.db import transaction as db_transaction
+
+        items = request.data.get("items")
+        if not isinstance(items, list):
+            return Response({"detail": "Le champ `items` doit être une liste."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        with db_transaction.atomic():
+            for item in items:
+                fid   = item.get("id")
+                order = item.get("order")
+                if fid is None or order is None:
+                    continue
+                Formation.objects.filter(pk=int(fid)).update(order=int(order))
+        return Response({"detail": "Ordre mis à jour."})
+
+
 # ── Import YouTube ─────────────────────────────────────────────────────────────
 
 class YoutubeImportView(APIView):

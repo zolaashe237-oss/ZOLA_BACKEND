@@ -354,6 +354,7 @@ class LibraryPdf(models.Model):
     branche = models.CharField(max_length=10, choices=Branche.choices, default=Branche.MEMBRE)
     access_level = models.CharField(max_length=10, choices=AccessLevel.choices, default=AccessLevel.PUBLIC)
     bucket_key = models.CharField(max_length=512, blank=True)
+    cover_key = models.CharField(max_length=512, blank=True)
     cover_url = models.URLField(blank=True)
     nb_pages = models.PositiveIntegerField(null=True, blank=True)
     size_mo = models.FloatField(null=True, blank=True)

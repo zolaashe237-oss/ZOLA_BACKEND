@@ -29,6 +29,7 @@ from .services import (
     course_unlocked,
     final_exam_unlocked,
     formation_accessible,
+    formation_prerequisite_met,
     generate_signed_url,
     grade_quiz,
     record_quiz_result,
@@ -81,10 +82,12 @@ def _accessible_sub_types(user) -> set[str]:
 
 
 def _quiz_access(user, quiz: Quiz) -> dict:
-    """État d'accès d'un QCM : {locked, lock_reason} selon abonnement + progression."""
+    """État d'accès d'un QCM : {locked, lock_reason} selon abonnement + prérequis + progression."""
     formation = quiz.formation if quiz.is_final else quiz.course.module.formation
     if not formation_accessible(user, formation):
         return {"locked": True, "lock_reason": "subscription"}
+    if not formation_prerequisite_met(user, formation):
+        return {"locked": True, "lock_reason": "formation_prerequisite"}
     unlocked = (final_exam_unlocked(user, formation) if quiz.is_final
                 else course_unlocked(user, quiz.course))
     if not unlocked:
@@ -140,15 +143,18 @@ class FormationViewSet(viewsets.ReadOnlyModelViewSet):
             qs = qs.filter(category=category)
         if search := self.request.query_params.get("search"):
             qs = qs.filter(Q(title__icontains=search) | Q(description__icontains=search))
+        if (is_public_param := self.request.query_params.get("is_public")) is not None:
+            qs = qs.filter(is_public=is_public_param.lower() in ("true", "1", "yes"))
 
         if not getattr(user, "is_authenticated", False):
             # Visiteurs non connectés : uniquement les formations marquées publiques
             return qs.filter(is_public=True).distinct()
 
-        # Masquer les branches dont l'utilisateur n'a pas l'accès requis (règle unique).
+        # Masquer les formations protégées des branches non accessibles.
+        # Les formations is_public=True restent visibles pour tous les membres connectés.
         for branch in ("MEMBRE", "FEMME", "ENFANT"):
             if not _user_has_access_to_branch(user, branch):
-                qs = qs.exclude(branch=branch)
+                qs = qs.exclude(branch=branch, is_public=False)
         if self.action == "retrieve":
             qs = qs.prefetch_related(
                 "modules__courses__resources", "modules__courses__quiz__questions",
@@ -198,6 +204,10 @@ class ResourceViewSet(viewsets.ReadOnlyModelViewSet):
         formation = course.module.formation
         if not formation_accessible(request.user, formation):
             return Response({"detail": "Formation réservée.", "lock_reason": "subscription"},
+                            status=status.HTTP_403_FORBIDDEN)
+        if not formation_prerequisite_met(request.user, formation):
+            return Response({"detail": "Terminez la formation précédente pour accéder à celle-ci.",
+                             "lock_reason": "formation_prerequisite"},
                             status=status.HTTP_403_FORBIDDEN)
         if not course_unlocked(request.user, course):
             return Response({"detail": "Cours verrouillé.", "lock_reason": "quiz"},

@@ -48,6 +48,7 @@ urlpatterns = [
     path("reminders/send/", vf.SendRemindersView.as_view(), name="admin-reminders"),
 
     # Contenu & quiz
+    path("formations/reorder/", vc.FormationReorderView.as_view(), name="admin-formations-reorder"),
     path("formations/import-youtube/", vc.YoutubeImportView.as_view(), name="admin-youtube-import"),
     path("content/upload/", vc.ContentUploadView.as_view(), name="admin-content-upload"),
     path("quiz/results/", vc.AdminQuizResultListView.as_view(), name="admin-quiz-results"),

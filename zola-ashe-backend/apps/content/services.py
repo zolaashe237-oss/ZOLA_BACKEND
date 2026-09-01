@@ -179,6 +179,13 @@ def formation_accessible(user, formation: Formation, accessible_types=None) -> b
 # Déblocage (descend) :   un module est ouvert si son parent est terminé et ses
 #                         frères précédents sont terminés ; un cours est ouvert si
 #                         son module est ouvert et les cours précédents terminés.
+# Prérequis inter-formation : la formation N est verrouillée tant que la formation
+#                              précédente (même branche, order < N) n'est pas complétée
+#                              et son quiz final n'a pas obtenu ≥ 14/20.
+
+# Seuil de passage du quiz final pour débloquer la formation suivante
+INTER_FORMATION_PASS_THRESHOLD = 14
+
 
 def _course_quiz(course: Course):
     quiz = getattr(course, "quiz", None)
@@ -191,6 +198,60 @@ def course_completed(user, course: Course) -> bool:
     if quiz is None:
         return True
     return QuizResult.objects.filter(user=user, quiz=quiz, validated=True).exists()
+
+
+def formation_final_quiz_passed(user, formation: Formation) -> bool:
+    """Quiz final de la formation validé avec score ≥ INTER_FORMATION_PASS_THRESHOLD.
+
+    S'il n'y a pas de quiz final actif, la condition est considérée remplie.
+    """
+    quiz = getattr(formation, "final_exam", None)
+    if not (quiz and quiz.active):
+        return True
+    return QuizResult.objects.filter(
+        user=user, quiz=quiz, score__gte=INTER_FORMATION_PASS_THRESHOLD
+    ).exists()
+
+
+def formation_all_courses_completed(user, formation: Formation) -> bool:
+    """Tous les cours de la formation sont terminés."""
+    courses = Course.objects.filter(module__formation=formation)
+    return all(course_completed(user, c) for c in courses)
+
+
+def formation_completed(user, formation: Formation) -> bool:
+    """Formation terminée : tous les cours complétés ET quiz final ≥ 14/20."""
+    return (
+        formation_all_courses_completed(user, formation)
+        and formation_final_quiz_passed(user, formation)
+    )
+
+
+def formation_prerequisite_met(user, formation: Formation) -> bool:
+    """Prérequis inter-formation satisfait.
+
+    La formation est librement accessible si :
+    - l'utilisateur n'est pas authentifié (les visiteurs voient les formations publiques sans verrou)
+    - la formation est publique (is_public=True) — pas de prérequis séquentiel pour les formations publiques
+    - c'est la première formation de la branche (order le plus bas)
+    - la formation précédente (même branche, order immédiatement inférieur) est terminée
+    """
+    if not getattr(user, "is_authenticated", False):
+        return True
+    if formation.is_public:
+        return True
+    prev = (
+        Formation.objects.filter(
+            branch=formation.branch,
+            is_public=False,
+            order__lt=formation.order,
+        )
+        .order_by("-order")
+        .first()
+    )
+    if prev is None:
+        return True  # première formation de la branche
+    return formation_completed(user, prev)
 
 
 def module_completed(user, module: Module) -> bool:
@@ -240,18 +301,22 @@ def final_exam_unlocked(user, formation: Formation) -> bool:
 
 
 def course_state(user, course: Course, accessible: bool) -> dict:
-    """État d'un cours pour un membre : verrouillage (abonnement/quiz) + achèvement."""
+    """État d'un cours pour un membre : verrouillage (abonnement/prérequis/quiz) + achèvement."""
     if not accessible:
         return {"locked": True, "lock_reason": "subscription", "completed": False}
+    if not formation_prerequisite_met(user, course.module.formation):
+        return {"locked": True, "lock_reason": "formation_prerequisite", "completed": False}
     if not course_unlocked(user, course):
         return {"locked": True, "lock_reason": "quiz", "completed": False}
     return {"locked": False, "lock_reason": None, "completed": course_completed(user, course)}
 
 
 def module_state(user, module: Module, accessible: bool) -> dict:
-    """État d'un module : verrouillage (abonnement/quiz) + achèvement."""
+    """État d'un module : verrouillage (abonnement/prérequis/quiz) + achèvement."""
     if not accessible:
         return {"locked": True, "lock_reason": "subscription", "completed": False}
+    if not formation_prerequisite_met(user, module.formation):
+        return {"locked": True, "lock_reason": "formation_prerequisite", "completed": False}
     if not module_unlocked(user, module):
         return {"locked": True, "lock_reason": "quiz", "completed": False}
     return {"locked": False, "lock_reason": None, "completed": module_completed(user, module)}
