@@ -247,10 +247,13 @@ def formation_prerequisite_met(user, formation: Formation) -> bool:
     """Prérequis inter-formation satisfait.
 
     La formation est librement accessible si :
-    - l'utilisateur n'est pas authentifié (les visiteurs voient les formations publiques sans verrou)
-    - la formation est publique (is_public=True) — pas de prérequis séquentiel pour les formations publiques
-    - c'est la première formation de la branche (order le plus bas)
-    - la formation précédente (même branche, order immédiatement inférieur) est terminée
+    - l'utilisateur n'est pas authentifié
+    - la formation est publique (is_public=True)
+    - c'est la première formation de la branche
+    - la formation précédente (triée par order puis pk) est terminée
+
+    Le pk est utilisé comme tiebreaker quand plusieurs formations partagent
+    le même order (cas fréquent quand order n'a pas été configuré, = 0 par défaut).
     """
     if not getattr(user, "is_authenticated", False):
         return True
@@ -260,9 +263,12 @@ def formation_prerequisite_met(user, formation: Formation) -> bool:
         Formation.objects.filter(
             branch=formation.branch,
             is_public=False,
-            order__lt=formation.order,
         )
-        .order_by("-order")
+        .filter(
+            Q(order__lt=formation.order)
+            | Q(order=formation.order, pk__lt=formation.pk)
+        )
+        .order_by("-order", "-pk")
         .first()
     )
     if prev is None:

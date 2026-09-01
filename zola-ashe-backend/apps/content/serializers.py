@@ -147,24 +147,35 @@ class FormationDetailSerializer(serializers.ModelSerializer):
     cover = serializers.SerializerMethodField()
     is_reserved = serializers.BooleanField(read_only=True)
     locked = serializers.SerializerMethodField()
+    lock_reason = serializers.SerializerMethodField()
     modules = serializers.SerializerMethodField()
     final_exam = serializers.SerializerMethodField()
 
     class Meta:
         model = Formation
         fields = ("id", "slug", "title", "description", "category", "branch", "level",
-                  "cover", "is_reserved", "locked", "modules", "final_exam")
+                  "cover", "is_reserved", "locked", "lock_reason", "modules", "final_exam")
 
     def _accessible(self, obj) -> bool:
         types = self.context.get("accessible_sub_types")
         return formation_accessible(self.context["request"].user, obj, accessible_types=types)
 
+    def _lock_reason(self, obj) -> str | None:
+        user = self.context["request"].user
+        if not self._accessible(obj):
+            return "subscription"
+        if not formation_prerequisite_met(user, obj):
+            return "formation_prerequisite"
+        return None
+
     def get_cover(self, obj) -> str:
         return generate_public_url(obj.cover_key) if obj.cover_key else obj.cover_url
 
     def get_locked(self, obj) -> bool:
-        user = self.context["request"].user
-        return not self._accessible(obj) or not formation_prerequisite_met(user, obj)
+        return self._lock_reason(obj) is not None
+
+    def get_lock_reason(self, obj) -> str | None:
+        return self._lock_reason(obj)
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_modules(self, obj):
