@@ -109,6 +109,30 @@ class MemoirSubmitView(APIView):
         )
 
 
+class MemoirImageUploadView(APIView):
+    """POST — uploade une image Mon Histoire et retourne l'URL publique."""
+
+    permission_classes = [IsAuthenticated]
+    parser_classes = [MultiPartParser]
+
+    def post(self, request):
+        from django.core.files.storage import default_storage
+        from uuid import uuid4
+        from apps.content.services import generate_public_url
+
+        image_file = request.FILES.get("image")
+        if not image_file:
+            return Response({"detail": "Fichier image requis (champ 'image')."}, status=status.HTTP_400_BAD_REQUEST)
+
+        if image_file.size > 5 * 1024 * 1024:
+            return Response({"detail": "Image trop volumineuse (max 5 Mo)."}, status=status.HTTP_400_BAD_REQUEST)
+
+        key = f"memoir-images/{uuid4().hex}_{image_file.name}"
+        saved_key = default_storage.save(key, image_file)
+        url = generate_public_url(saved_key)
+        return Response({"url": url})
+
+
 class TranscribeView(APIView):
     """POST — transcrit un enregistrement audio via Gemini."""
 

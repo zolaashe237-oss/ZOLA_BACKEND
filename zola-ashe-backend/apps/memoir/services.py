@@ -195,6 +195,34 @@ def generate_memoir_docx(draft: "MemoirDraft") -> bytes:
                 run_t.font.italic = True
                 run_t.font.size = Pt(10)
 
+            # Images
+            image_urls = answer.get("imageUrls") or []
+            image_captions = answer.get("imageCaptions") or []
+            if image_urls:
+                import urllib.request
+                photos_label = doc.add_paragraph()
+                run_ph = photos_label.add_run("Photos :")
+                run_ph.font.bold = True
+                run_ph.font.size = Pt(9)
+                run_ph.font.color.rgb = RGBColor(0x88, 0x66, 0x44)
+
+                for i, img_url in enumerate(image_urls):
+                    try:
+                        req = urllib.request.Request(img_url, headers={"User-Agent": "Mozilla/5.0"})
+                        with urllib.request.urlopen(req, timeout=10) as resp:
+                            img_bytes = BytesIO(resp.read())
+                        doc.add_picture(img_bytes, width=Cm(12))
+                        caption_text = image_captions[i] if i < len(image_captions) else ""
+                        if caption_text:
+                            cap_p = doc.add_paragraph(caption_text)
+                            cap_p.alignment = WD_ALIGN_PARAGRAPH.CENTER
+                            cap_run = cap_p.runs[0] if cap_p.runs else cap_p.add_run(caption_text)
+                            cap_run.font.size = Pt(9)
+                            cap_run.font.italic = True
+                            cap_run.font.color.rgb = RGBColor(0x88, 0x88, 0x88)
+                    except Exception:
+                        pass
+
             doc.add_paragraph()
 
         doc.add_page_break()
