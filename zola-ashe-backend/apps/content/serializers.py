@@ -118,7 +118,7 @@ class FormationListSerializer(serializers.ModelSerializer):
         first_course = first_module.courses.order_by("order").first()
         if not first_course:
             return ""
-        first_resource = first_course.resources.filter(is_youtube=True).order_by("order").first()
+        first_resource = first_course.resources.filter(video_source="YOUTUBE").order_by("order").first()
         if not first_resource or not first_resource.youtube_url:
             return ""
         m = re.search(r"(?:v=|youtu\.be/)([A-Za-z0-9_-]{11})", first_resource.youtube_url)
