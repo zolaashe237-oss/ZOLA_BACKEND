@@ -57,6 +57,19 @@ class AuthFlowTests(APITestCase):
         self.assertEqual(EmailOTP.objects.filter(user=user).count(), 1)
         self.assertEqual(len(mail.outbox), 1)  # email OTP envoyé (eager)
 
+    def test_register_with_referral_code(self):
+        sponsor = User.objects.create_user("sponsor@zola.com", "Passw0rd!", full_name="Sponsor", referral_code="ZA0001")
+        resp = self.client.post("/api/auth/register/", {
+            "email": "referred@zola.com", "full_name": "Referred",
+            "password": "Passw0rd!", "password2": "Passw0rd!",
+            "referral_code": "za0001",
+        }, format="json")
+        self.assertEqual(resp.status_code, 201)
+        from apps.affiliate.models import Referral, ReferralStatus
+        ref = Referral.objects.get(referred__email="referred@zola.com")
+        self.assertEqual(ref.referrer, sponsor)
+        self.assertEqual(ref.status, ReferralStatus.PENDING)
+
     def test_verify_then_login_sets_refresh_cookie(self):
         # Inscription
         self.client.post("/api/auth/register/", {

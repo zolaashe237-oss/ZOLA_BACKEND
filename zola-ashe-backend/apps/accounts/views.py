@@ -1,13 +1,16 @@
-"""Vues d'authentification et de profil (CDC §3.3, §7.1).
+"""Vues d'authentification et de profil (CDC 3.3, 7.1).
 
-Stratégie tokens : l'access JWT est renvoyé dans le corps (gardé en mémoire côté
-front), le refresh est posé dans un cookie HttpOnly — invisible au JavaScript,
-donc protégé du XSS. Le refresh tourne à chaque rafraîchissement (rotation +
+Strategie tokens : l'access JWT est renvoye dans le corps (garde en memoire cote
+front), le refresh est pose dans un cookie HttpOnly -- invisible au JavaScript,
+donc protege du XSS. Le refresh tourne a chaque rafraichissement (rotation +
 blacklist via SimpleJWT).
 """
+import logging
 from django.conf import settings
 from django.contrib.auth import authenticate
 from django.core.cache import cache
+
+logger = logging.getLogger(__name__)
 from drf_spectacular.utils import OpenApiResponse, extend_schema, extend_schema_view, inline_serializer
 from rest_framework import generics, serializers as drf_serializers, status
 from rest_framework.permissions import AllowAny, IsAuthenticated
@@ -79,7 +82,7 @@ def _clear_refresh_cookie(response: Response) -> None:
 
 
 def _issue_tokens(user: User) -> tuple[str, str]:
-    """Retourne (access, refresh). Session admin raccourcie à 4h (CDC §5.1)."""
+    """Retourne (access, refresh). Session admin raccourcie a 4h (CDC 5.1)."""
     refresh = RefreshToken.for_user(user)
     access = refresh.access_token
     if user.role == "ADMIN":

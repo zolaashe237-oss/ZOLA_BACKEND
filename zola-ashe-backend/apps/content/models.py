@@ -214,6 +214,7 @@ class Quiz(models.Model):
 
     class Meta:
         db_table = "quizzes"
+        ordering = ["id"]
         constraints = [
             models.CheckConstraint(
                 name="quiz_course_xor_formation_xor_pdf",
