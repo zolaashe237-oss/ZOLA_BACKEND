@@ -510,8 +510,8 @@ class AdminLibraryPdfSerializer(serializers.ModelSerializer):
     def to_representation(self, instance):
         data = super().to_representation(instance)
         if instance.cover_key:
-            from apps.content.services import generate_signed_url
-            resolved = generate_signed_url(instance.cover_key)
+            from apps.content.services import generate_public_url
+            resolved = generate_public_url(instance.cover_key)
             if resolved:
                 if resolved.startswith("/"):
                     request = self.context.get("request")

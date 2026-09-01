@@ -145,6 +145,22 @@ def generate_signed_url(key: str) -> str:
         return f"/{bucket_name}/{key.lstrip('/')}"
 
 
+def generate_public_url(key: str) -> str:
+    """URL directe pour un média dans le bucket public (avatars, couvertures, images).
+
+    Contrairement à generate_signed_url, cette fonction cible le bucket public
+    (MEDIA_BUCKET / AWS_STORAGE_BUCKET_NAME) via default_storage.url().
+    En production avec un domaine CDN, l'URL est permanente (sans signature).
+    """
+    if not key:
+        return ""
+    try:
+        return default_storage.url(key)
+    except Exception as exc:
+        logger.error("Échec URL publique (key=%s): %s", key, exc)
+        return f"/media/{key.lstrip('/')}"
+
+
 # ─── Accès à la formation (abonnement, RG-22 / RG-10) ───────────────────────
 
 def formation_accessible(user, formation: Formation, accessible_types=None) -> bool:

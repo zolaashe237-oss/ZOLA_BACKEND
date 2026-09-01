@@ -51,6 +51,7 @@ urlpatterns = [
     path("formations/reorder/", vc.FormationReorderView.as_view(), name="admin-formations-reorder"),
     path("formations/import-youtube/", vc.YoutubeImportView.as_view(), name="admin-youtube-import"),
     path("content/upload/", vc.ContentUploadView.as_view(), name="admin-content-upload"),
+    path("content/pdf-cover/", vc.PdfFirstPageCoverView.as_view(), name="admin-pdf-first-page-cover"),
     path("quiz/results/", vc.AdminQuizResultListView.as_view(), name="admin-quiz-results"),
     path("quiz/results/<int:pk>/answers/", vc.QuizResultAnswersView.as_view(), name="admin-quiz-result-answers"),
     path("quiz/score/", vc.QuizScoreView.as_view(), name="admin-quiz-score"),

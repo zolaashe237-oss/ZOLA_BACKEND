@@ -14,6 +14,7 @@ from .services import (
     final_exam_unlocked,
     formation_accessible,
     formation_prerequisite_met,
+    generate_public_url,
     generate_signed_url,
     module_state,
 )
@@ -238,7 +239,7 @@ class LibraryPdfPublicSerializer(serializers.ModelSerializer):
 
     def get_cover(self, obj) -> str:
         if obj.cover_key:
-            url = generate_signed_url(obj.cover_key)
+            url = generate_public_url(obj.cover_key)
             if url:
                 if url.startswith("/"):
                     request = self.context.get("request")

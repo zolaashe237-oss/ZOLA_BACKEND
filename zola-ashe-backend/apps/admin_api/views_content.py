@@ -612,6 +612,51 @@ class ContentUploadView(APIView):
                         status=status.HTTP_201_CREATED)
 
 
+class PdfFirstPageCoverView(APIView):
+    """Génère la couverture d'un PDF à partir de sa première page (PyMuPDF)."""
+    permission_classes = [IsAdmin]
+
+    def post(self, request):
+        bucket_key = (request.data.get("bucket_key") or "").strip()
+        if not bucket_key:
+            return Response({"detail": "bucket_key requis."}, status=status.HTTP_400_BAD_REQUEST)
+
+        try:
+            with default_storage.open(bucket_key, "rb") as f:
+                pdf_data = f.read()
+        except Exception as exc:
+            return Response({"detail": f"PDF introuvable : {exc}"}, status=status.HTTP_404_NOT_FOUND)
+
+        try:
+            import fitz  # PyMuPDF
+            import io
+            from PIL import Image
+
+            doc = fitz.open(stream=pdf_data, filetype="pdf")
+            if not doc.page_count:
+                return Response({"detail": "PDF vide."}, status=status.HTTP_400_BAD_REQUEST)
+            pix = doc[0].get_pixmap(matrix=fitz.Matrix(2.0, 2.0), alpha=False)
+            doc.close()
+
+            img = Image.frombytes("RGB", [pix.width, pix.height], pix.samples)
+            buf = io.BytesIO()
+            img.save(buf, format="JPEG", quality=88)
+            img_bytes = buf.getvalue()
+        except Exception as exc:
+            return Response({"detail": f"Erreur rendu PDF : {exc}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
+
+        from django.core.files.base import ContentFile
+        from apps.content.services import generate_public_url
+
+        cover_key = f"covers/{uuid4().hex}.jpg"
+        saved_key = default_storage.save(cover_key, ContentFile(img_bytes))
+        preview_url = generate_public_url(saved_key)
+        if preview_url and preview_url.startswith("/"):
+            preview_url = request.build_absolute_uri(preview_url)
+
+        return Response({"bucket_key": saved_key, "preview_url": preview_url})
+
+
 @extend_schema(tags=[_TAG], summary="Saisir un score de QCM (admin)",
                description="Enregistre manuellement un score (/20) pour un membre sur un QCM donné (§5.6).",
                request=_ScoreRequest, responses={200: _DetailResponse})
