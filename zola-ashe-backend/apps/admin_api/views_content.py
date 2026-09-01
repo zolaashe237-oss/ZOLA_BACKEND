@@ -786,7 +786,7 @@ class AdminLibraryPdfViewSet(_AuditedContentMixin, viewsets.ModelViewSet):
     """CRUD de la bibliothèque PDF standalone (guides, livrets, supports)."""
     serializer_class = AdminLibraryPdfSerializer
     permission_classes = [IsAdmin]
-    queryset = LibraryPdf.objects.all().order_by("-created_at")
+    queryset = LibraryPdf.objects.all().order_by("order", "pk")
     audit_target_type = "LibraryPdf"
 
     def get_queryset(self):
@@ -796,6 +796,20 @@ class AdminLibraryPdfViewSet(_AuditedContentMixin, viewsets.ModelViewSet):
         if active := self.request.query_params.get("is_active"):
             qs = qs.filter(is_active=active.lower() == "true")
         return qs
+
+    @action(detail=False, methods=["post"], url_path="reorder")
+    def reorder(self, request):
+        """Met à jour l'ordre des livres via drag-and-drop.
+
+        Attend `{"ids": [1, 2, 3]}` — les IDs dans le nouvel ordre.
+        Attribue order=0,1,2,… à chaque livre.
+        """
+        ids = request.data.get("ids", [])
+        if not isinstance(ids, list):
+            return Response({"detail": "ids doit être une liste."}, status=status.HTTP_400_BAD_REQUEST)
+        for i, pk in enumerate(ids):
+            LibraryPdf.objects.filter(pk=pk).update(order=i)
+        return Response({"ok": True})
 
 
 class AdminQuizResultPagination(PageNumberPagination):

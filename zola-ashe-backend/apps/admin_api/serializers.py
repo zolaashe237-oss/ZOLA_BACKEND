@@ -491,7 +491,7 @@ class AdminLibraryPdfSerializer(serializers.ModelSerializer):
         model = LibraryPdf
         fields = ("id", "title", "description", "category", "branche", "access_level",
                   "bucket_key", "file_url", "cover_key", "cover_url", "nb_pages", "size_mo",
-                  "is_active", "is_gratuit", "created_at", "updated_at")
+                  "order", "is_active", "is_gratuit", "created_at", "updated_at")
         read_only_fields = ("id", "created_at", "updated_at")
 
     def get_file_url(self, obj) -> str | None:

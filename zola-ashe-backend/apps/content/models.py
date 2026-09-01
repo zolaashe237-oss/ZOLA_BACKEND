@@ -349,9 +349,17 @@ class Audio(models.Model):
 
 class LibraryPdf(models.Model):
     """PDF standalone de la bibliothèque (guides, livrets, supports)."""
+
+    CATEGORIES = [
+        ("Spiritualité",             "Spiritualité"),
+        ("Développement personnel",  "Développement personnel"),
+        ("Entrepreneuriat",          "Entrepreneuriat"),
+        ("Création de contenu",      "Création de contenu"),
+    ]
+
     title = models.CharField(max_length=200)
     description = models.TextField(blank=True)
-    category = models.CharField(max_length=100, blank=True)
+    category = models.CharField(max_length=100, blank=True, choices=CATEGORIES)
     branche = models.CharField(max_length=10, choices=Branche.choices, default=Branche.MEMBRE)
     access_level = models.CharField(max_length=10, choices=AccessLevel.choices, default=AccessLevel.PUBLIC)
     bucket_key = models.CharField(max_length=512, blank=True)
@@ -359,6 +367,7 @@ class LibraryPdf(models.Model):
     cover_url = models.URLField(blank=True)
     nb_pages = models.PositiveIntegerField(null=True, blank=True)
     size_mo = models.FloatField(null=True, blank=True)
+    order = models.PositiveIntegerField(default=0, db_index=True)
     is_active = models.BooleanField(default=True)
     is_gratuit = models.BooleanField(default=False)
     created_at = models.DateTimeField(auto_now_add=True)
@@ -366,7 +375,7 @@ class LibraryPdf(models.Model):
 
     class Meta:
         db_table = "library_pdfs"
-        ordering = ["-created_at"]
+        ordering = ["order", "pk"]
 
     def __str__(self):
         return self.title
