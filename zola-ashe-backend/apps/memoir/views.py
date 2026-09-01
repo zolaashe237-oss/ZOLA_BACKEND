@@ -1,5 +1,4 @@
 """Endpoints Mon Histoire — brouillon, soumission et transcription audio."""
-import base64
 import logging
 
 from drf_spectacular.utils import OpenApiResponse, extend_schema
@@ -153,21 +152,26 @@ class TranscribeView(APIView):
         if not audio_file:
             return Response({"detail": "Fichier audio requis (champ 'audio')."}, status=status.HTTP_400_BAD_REQUEST)
 
-        mime_type = audio_file.content_type or "audio/webm"
-        audio_b64 = base64.b64encode(audio_file.read()).decode("utf-8")
+        # Le SDK Gemini encode lui-même en base64 — passer les bytes bruts
+        audio_bytes = audio_file.read()
+        # Supprimer les paramètres de codec (ex: "audio/webm;codecs=opus" → "audio/webm")
+        mime_type = (audio_file.content_type or "audio/webm").split(";")[0].strip()
 
         try:
             from apps.ai_quiz.gemini_client import get_model
             model = get_model()
-            response = model.generate_content([
-                {"mime_type": mime_type, "data": audio_b64},
-                (
-                    "Transcris fidèlement ce témoignage oral en français. "
-                    "Conserve le style parlé et les tournures naturelles. "
-                    "Ne corrige pas les imperfections grammaticales du registre oral. "
-                    "Renvoie uniquement la transcription, sans commentaire ni ajout."
-                ),
-            ])
+            response = model.generate_content(
+                [
+                    {"mime_type": mime_type, "data": audio_bytes},
+                    (
+                        "Transcris fidèlement ce témoignage oral en français. "
+                        "Conserve le style parlé et les tournures naturelles. "
+                        "Ne corrige pas les imperfections grammaticales du registre oral. "
+                        "Renvoie uniquement la transcription, sans commentaire ni ajout."
+                    ),
+                ],
+                request_options={"timeout": 60},
+            )
             transcript = (response.text or "").strip()
             logger.info("memoir.transcribe user=%s chars=%d", request.user.email, len(transcript))
             return Response({"transcript": transcript})
