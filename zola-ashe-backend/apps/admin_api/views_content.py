@@ -1,7 +1,39 @@
 """Back-office — formations, modules, cours, ressources, QCM et annonces (§5.4, §5.6)."""
 from uuid import uuid4
 
+from django.conf import settings
 from django.core.files.storage import default_storage
+
+
+def _read_private_file(key: str) -> bytes:
+    """Lit un fichier depuis le bucket privé (PDFs, audios, vidéos).
+
+    En dev (USE_S3=False), repli sur default_storage.
+    En prod, utilise directement boto3 sur R2_PRIVATE_BUCKET.
+    """
+    if not getattr(settings, "USE_S3", False):
+        with default_storage.open(key, "rb") as f:
+            return f.read()
+
+    import boto3
+    from botocore.client import Config
+
+    endpoint_url = getattr(settings, "AWS_S3_ENDPOINT_URL", None) or getattr(settings, "S3_PUBLIC_ENDPOINT_URL", None)
+    if endpoint_url and not endpoint_url.startswith(("http://", "https://")):
+        endpoint_url = f"https://{endpoint_url}"
+
+    client = boto3.client(
+        "s3",
+        endpoint_url=endpoint_url,
+        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+        region_name=getattr(settings, "AWS_S3_REGION_NAME", "auto"),
+        config=Config(signature_version="s3v4", s3={"addressing_style": "path"}),
+    )
+    bucket = getattr(settings, "R2_PRIVATE_BUCKET",
+                     getattr(settings, "AWS_STORAGE_BUCKET_NAME", "zola-ashe-private"))
+    obj = client.get_object(Bucket=bucket, Key=key.lstrip("/"))
+    return obj["Body"].read()
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiExample,
@@ -622,8 +654,7 @@ class PdfFirstPageCoverView(APIView):
             return Response({"detail": "bucket_key requis."}, status=status.HTTP_400_BAD_REQUEST)
 
         try:
-            with default_storage.open(bucket_key, "rb") as f:
-                pdf_data = f.read()
+            pdf_data = _read_private_file(bucket_key)
         except Exception as exc:
             return Response({"detail": f"PDF introuvable : {exc}"}, status=status.HTTP_404_NOT_FOUND)
 

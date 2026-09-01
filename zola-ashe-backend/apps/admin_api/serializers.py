@@ -182,11 +182,12 @@ class AdminFormationSerializer(serializers.ModelSerializer):
         from apps.content.services import generate_public_url
         if obj.cover_key:
             url = generate_public_url(obj.cover_key)
-            if url and url.startswith("/"):
-                request = self.context.get("request")
-                if request:
-                    url = request.build_absolute_uri(url)
-            return url
+            if url:
+                if url.startswith("/"):
+                    request = self.context.get("request")
+                    if request:
+                        url = request.build_absolute_uri(url)
+                return url
         return obj.cover_url or ""
 
     def validate_access_subscription_types(self, value):

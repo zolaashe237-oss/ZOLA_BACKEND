@@ -42,10 +42,26 @@ def get_member_formation_progress(user, formation):
             if getattr(c, 'quiz', None) and c.quiz.active:
                 quiz_ids.append(c.quiz.id)
 
+    if not quiz_ids:
+        return {
+            "modules_completed": 0,
+            "modules_total": modules_total,
+            "progress_pct": 0,
+            "completed": False,
+        }
+
     validated_quizzes = set(
         QuizResult.objects.filter(user=user, quiz_id__in=quiz_ids, validated=True)
         .values_list('quiz_id', flat=True)
     )
+
+    if not validated_quizzes:
+        return {
+            "modules_completed": 0,
+            "modules_total": modules_total,
+            "progress_pct": 0,
+            "completed": False,
+        }
 
     def is_course_completed(course):
         quiz = getattr(course, 'quiz', None)
@@ -157,10 +173,37 @@ def bulk_compute_progress(members, formations):
     for member in members:
         for f_id, s in structs.items():
             modules_total = s["modules_total"]
+            all_quiz_ids  = s["all_quiz_ids"]
+
             if modules_total == 0:
                 result[(member.id, f_id)] = {
                     "modules_completed": 0,
                     "modules_total": 0,
+                    "progress_pct": 0,
+                    "completed": False,
+                }
+                continue
+
+            # Si la formation n'a aucun quiz actif, la progression ne peut pas
+            # être mesurée : on ne peut pas distinguer "pas commencé" de "tout vu".
+            if not all_quiz_ids:
+                result[(member.id, f_id)] = {
+                    "modules_completed": 0,
+                    "modules_total": modules_total,
+                    "progress_pct": 0,
+                    "completed": False,
+                }
+                continue
+
+            # Si l'utilisateur n'a validé AUCUN quiz de cette formation,
+            # il n'a pas encore commencé → progression = 0 %.
+            user_has_started = any(
+                (member.id, qid) in validations for qid in all_quiz_ids
+            )
+            if not user_has_started:
+                result[(member.id, f_id)] = {
+                    "modules_completed": 0,
+                    "modules_total": modules_total,
                     "progress_pct": 0,
                     "completed": False,
                 }
