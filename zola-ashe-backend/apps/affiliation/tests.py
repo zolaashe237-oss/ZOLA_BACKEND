@@ -27,7 +27,7 @@ class AffiliationSkeletonTests(APITestCase):
         self.client.force_authenticate(self.user)
         r = self.client.get("/api/affiliation/leads/")
         self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.data["count"], 0)
+        self.assertEqual(len(r.data), 0)
 
     def test_link_returns_202_stub(self):
         self.client.force_authenticate(self.user)
