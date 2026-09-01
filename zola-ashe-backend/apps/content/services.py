@@ -246,22 +246,28 @@ def formation_completed(user, formation: Formation) -> bool:
 def formation_prerequisite_met(user, formation: Formation) -> bool:
     """Prérequis inter-formation satisfait.
 
-    La formation est librement accessible si :
-    - l'utilisateur n'est pas authentifié
+    La formation N est débloquée si :
+    - l'utilisateur n'est pas authentifié (pour le catalogue public / preview)
     - la formation est publique (is_public=True)
-    - c'est la première formation de la branche
-    - la formation précédente (triée par order puis pk) est terminée
-
-    Le pk est utilisé comme tiebreaker quand plusieurs formations partagent
-    le même order (cas fréquent quand order n'a pas été configuré, = 0 par défaut).
+    - c'est la première formation de la branche (ordre le plus bas)
+    - la formation précédente (même branche, triée par order puis id) est terminée
+      (tous les cours complétés et quiz final validé si présent).
     """
     if not getattr(user, "is_authenticated", False):
         return True
     if formation.is_public:
         return True
+
+    # Normalisation de la branche : MEMBRE, GENERALE et chaîne vide représentent le tronc commun
+    branch_val = (formation.branch or "MEMBRE").upper()
+    if branch_val in ("MEMBRE", "GENERALE", ""):
+        branch_filter = ["MEMBRE", "GENERALE", ""]
+    else:
+        branch_filter = [branch_val]
+
     prev = (
         Formation.objects.filter(
-            branch=formation.branch,
+            branch__in=branch_filter,
             is_public=False,
         )
         .filter(
@@ -272,7 +278,8 @@ def formation_prerequisite_met(user, formation: Formation) -> bool:
         .first()
     )
     if prev is None:
-        return True  # première formation de la branche
+        return True  # Première formation de la branche -> toujours accessible
+
     return formation_completed(user, prev)
 
 
