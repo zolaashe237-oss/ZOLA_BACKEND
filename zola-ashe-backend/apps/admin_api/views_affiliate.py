@@ -167,3 +167,11 @@ class AffiliateMarkPaidView(APIView):
         record(request.user, AuditAction.MANUAL_PAYMENT, target_type="Referral",
                target_id=0, payload={"paid_ids": list(ids), "updated": updated})
         return Response({"updated": updated})
+
+
+# Aliases pour rétrocompatibilité
+AdminAffiliateConfigView = AffiliateConfigView
+AdminAffiliateStatsView = AffiliateStatsView
+AdminAffiliateReferralsView = AffiliateReferralListView
+AdminAffiliateMarkPaidView = AffiliateMarkPaidView
+

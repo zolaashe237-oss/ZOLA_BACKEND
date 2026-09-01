@@ -28,10 +28,18 @@ def ensure_referral_code(user) -> str:
 def register_referral(referral_code: str, new_user) -> bool:
     """
     Enregistre un parrainage PENDING lors de l'inscription avec un code.
+    Supporte :
+      - Code exact (ex: ZA0001, 8AB3CD21)
+      - Format ZA{id} (ex: ZA0001 -> utilisateur ID 1)
+      - ID numérique direct (ex: 1 -> utilisateur ID 1)
+      - Email du parrain
     Retourne True si le parrainage est créé, False sinon.
     """
     if not referral_code:
         return False
+    import re
+    import logging
+    logger = logging.getLogger(__name__)
     from apps.accounts.models import User
     from .models import Referral, AffiliateConfig
 
@@ -41,19 +49,51 @@ def register_referral(referral_code: str, new_user) -> bool:
 
     config = AffiliateConfig.get()
     if config and not config.is_active:
+        logger.warning("Programme d'affiliation inactif, parrainage ignoré pour code=%s", code)
         return False
 
+    referrer = None
+
+    # 1) Recherche directe par referral_code (insensible à la casse)
     referrer = (User.objects
                 .filter(referral_code__iexact=code)
                 .exclude(id=new_user.id)
                 .first())
+
+    # 2) Recherche par format ZA{id} (ex: ZA0001, ZA01, ZA1)
     if not referrer:
+        m = re.match(r"^ZA0*(\d+)$", code, re.IGNORECASE)
+        if m:
+            user_id = int(m.group(1))
+            referrer = User.objects.filter(id=user_id).exclude(id=new_user.id).first()
+
+    # 3) Recherche par ID numérique direct
+    if not referrer and code.isdigit():
+        user_id = int(code)
+        referrer = User.objects.filter(id=user_id).exclude(id=new_user.id).first()
+
+    # 4) Recherche par email exact
+    if not referrer and "@" in code:
+        referrer = User.objects.filter(email__iexact=code).exclude(id=new_user.id).first()
+
+    if not referrer:
+        logger.warning("Parrain introuvable pour le code '%s' (nouvel utilisateur: %s)", code, new_user.email)
         return False
+
+    # Assure que le parrain a un referral_code défini
+    if not referrer.referral_code:
+        referrer.referral_code = f"ZA{referrer.id:04d}"
+        referrer.save(update_fields=["referral_code"])
 
     if Referral.objects.filter(referred=new_user).exists():
+        logger.info("Un parrainage existe déjà pour l'utilisateur %s", new_user.email)
         return False
 
-    Referral.objects.create(referrer=referrer, referred=new_user)
+    ref = Referral.objects.create(referrer=referrer, referred=new_user)
+    logger.info(
+        "Parrainage ENREGISTRÉ : ID=%s, parrain=%s (id=%s, code=%s), filleul=%s (id=%s)",
+        ref.id, referrer.email, referrer.id, referrer.referral_code, new_user.email, new_user.id,
+    )
     return True
 
 
