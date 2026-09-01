@@ -1,40 +1,32 @@
 """Vues admin pour le module Affiliation & Parrainage."""
-from django.core.cache import cache
-from django.utils import timezone
 from drf_spectacular.utils import extend_schema
 from rest_framework import serializers, status
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from apps.accounts.models import GlobalSettings
+from apps.affiliate.models import AffiliateConfig
 from apps.admin_api.permissions import IsAdmin
 
 _TAG = "Admin - Affiliation"
-CACHE_KEY_AFFILIATE_CONFIG = "affiliate_config_data"
 
 
 class AffiliateConfigSerializer(serializers.Serializer):
-    commission_amount = serializers.FloatField(default=5000.0)
-    min_withdrawal = serializers.FloatField(default=10000.0)
+    commission_amount = serializers.IntegerField()
+    min_withdrawal = serializers.IntegerField()
     whatsapp_number = serializers.CharField(required=False, allow_blank=True, default="")
     is_active = serializers.BooleanField(default=True)
     updated_at = serializers.DateTimeField(required=False)
 
 
-def _get_affiliate_config() -> dict:
-    gs = GlobalSettings.load()
-    default_cfg = {
-        "commission_amount": 5000.0,
-        "min_withdrawal": 10000.0,
-        "whatsapp_number": gs.admin_whatsapp or "+237690000000",
-        "is_active": True,
-        "updated_at": gs.updated_at.isoformat() if gs.updated_at else timezone.now().isoformat(),
+def _serialize_config(cfg: AffiliateConfig) -> dict:
+    return {
+        "commission_amount": cfg.commission_amount,
+        "min_withdrawal":    cfg.min_withdrawal,
+        "whatsapp_number":   cfg.whatsapp_number,
+        "is_active":         cfg.is_active,
+        "updated_at":        cfg.updated_at,
     }
-    stored = cache.get(CACHE_KEY_AFFILIATE_CONFIG)
-    if isinstance(stored, dict):
-        default_cfg.update(stored)
-    return default_cfg
 
 
 @extend_schema(tags=[_TAG], summary="Configuration du programme d'affiliation")
@@ -43,31 +35,27 @@ class AdminAffiliateConfigView(APIView):
     serializer_class = AffiliateConfigSerializer
 
     def get(self, request):
-        return Response(_get_affiliate_config())
+        return Response(_serialize_config(AffiliateConfig.get()))
 
     def patch(self, request):
-        cfg = _get_affiliate_config()
-        if "commission_amount" in request.data:
+        cfg  = AffiliateConfig.get()
+        data = request.data
+        if "commission_amount" in data:
             try:
-                cfg["commission_amount"] = float(request.data["commission_amount"])
+                cfg.commission_amount = int(data["commission_amount"])
             except (ValueError, TypeError):
                 pass
-        if "min_withdrawal" in request.data:
+        if "min_withdrawal" in data:
             try:
-                cfg["min_withdrawal"] = float(request.data["min_withdrawal"])
+                cfg.min_withdrawal = int(data["min_withdrawal"])
             except (ValueError, TypeError):
                 pass
-        if "whatsapp_number" in request.data:
-            cfg["whatsapp_number"] = str(request.data["whatsapp_number"])
-            gs = GlobalSettings.load()
-            gs.admin_whatsapp = cfg["whatsapp_number"]
-            gs.save()
-        if "is_active" in request.data:
-            cfg["is_active"] = bool(request.data["is_active"])
-
-        cfg["updated_at"] = timezone.now().isoformat()
-        cache.set(CACHE_KEY_AFFILIATE_CONFIG, cfg, timeout=None)
-        return Response(cfg)
+        if "whatsapp_number" in data:
+            cfg.whatsapp_number = str(data["whatsapp_number"]).strip()
+        if "is_active" in data:
+            cfg.is_active = bool(data["is_active"])
+        cfg.save()
+        return Response(_serialize_config(cfg))
 
     def put(self, request):
         return self.patch(request)

@@ -4,7 +4,8 @@ from rest_framework.routers import DefaultRouter
 
 from apps.blog.views import AdminArticleViewSet
 
-from . import views_affiliate as vaff
+from . import views_affiliate as vaff_real   # implémentation complète (DB)
+from . import views_affiliation as vaff       # config admin (DB depuis correction)
 from . import views_community as vcom
 from . import views_content as vc
 from . import views_finance as vf
@@ -14,7 +15,6 @@ from . import views_moderation as vmod
 from . import views_progression as vp
 from . import views_settings as vset
 from . import views_whatsapp as vw
-from . import views_affiliation as vaff
 
 router = DefaultRouter()
 router.register("members", vm.MemberViewSet, basename="admin-member")
@@ -92,14 +92,14 @@ urlpatterns = [
     path("whatsapp/send/", vw.SendWhatsAppMessageView.as_view(), name="admin-whatsapp-send"),
 
     # Affiliation / Parrainage
-    path("affiliate/config/", vaff.AdminAffiliateConfigView.as_view(), name="admin-affiliate-config"),
-    path("affiliate/stats/", vaff.AdminAffiliateStatsView.as_view(), name="admin-affiliate-stats"),
-    path("affiliate/referrals/", vaff.AdminAffiliateReferralsView.as_view(), name="admin-affiliate-referrals"),
-    path("affiliate/referrals/pay/", vaff.AdminAffiliateMarkPaidView.as_view(), name="admin-affiliate-referrals-pay"),
-    path("affiliation/config/", vaff.AdminAffiliateConfigView.as_view(), name="admin-affiliation-config"),
-    path("affiliation/stats/", vaff.AdminAffiliateStatsView.as_view(), name="admin-affiliation-stats"),
-    path("affiliation/referrals/", vaff.AdminAffiliateReferralsView.as_view(), name="admin-affiliation-referrals"),
-    path("affiliation/referrals/pay/", vaff.AdminAffiliateMarkPaidView.as_view(), name="admin-affiliation-referrals-pay"),
+    path("affiliate/config/",         vaff.AdminAffiliateConfigView.as_view(),    name="admin-affiliate-config"),
+    path("affiliate/stats/",          vaff_real.AffiliateStatsView.as_view(),      name="admin-affiliate-stats"),
+    path("affiliate/referrals/",      vaff_real.AffiliateReferralListView.as_view(), name="admin-affiliate-referrals"),
+    path("affiliate/referrals/pay/",  vaff_real.AffiliateMarkPaidView.as_view(),  name="admin-affiliate-referrals-pay"),
+    path("affiliation/config/",       vaff.AdminAffiliateConfigView.as_view(),    name="admin-affiliation-config"),
+    path("affiliation/stats/",        vaff_real.AffiliateStatsView.as_view(),      name="admin-affiliation-stats"),
+    path("affiliation/referrals/",    vaff_real.AffiliateReferralListView.as_view(), name="admin-affiliation-referrals"),
+    path("affiliation/referrals/pay/",vaff_real.AffiliateMarkPaidView.as_view(),  name="admin-affiliation-referrals-pay"),
 
     *router.urls,
 ]

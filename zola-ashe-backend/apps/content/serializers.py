@@ -92,19 +92,37 @@ class FormationListSerializer(serializers.ModelSerializer):
     locked = serializers.SerializerMethodField()
     lock_reason = serializers.SerializerMethodField()
     module_count = serializers.SerializerMethodField()
+    preview_youtube_id = serializers.SerializerMethodField()
 
     class Meta:
         model = Formation
         fields = ("id", "slug", "title", "description", "category", "branch", "level",
-                  "cover", "is_public", "is_reserved", "locked", "lock_reason", "module_count")
+                  "cover", "is_public", "is_reserved", "locked", "lock_reason", "module_count",
+                  "preview_youtube_id")
 
     def get_cover(self, obj) -> str:
-        url = generate_signed_url(obj.cover_key) if obj.cover_key else obj.cover_url
+        # Les covers de formations sont dans le bucket public (default_storage)
+        url = generate_public_url(obj.cover_key) if obj.cover_key else obj.cover_url
         if url and url.startswith("/"):
             request = self.context.get("request")
             if request:
                 return request.build_absolute_uri(url)
         return url or ""
+
+    def get_preview_youtube_id(self, obj) -> str:
+        """Retourne l'ID YouTube du premier cours vidéo de la formation."""
+        import re
+        first_module = obj.modules.order_by("order").first()
+        if not first_module:
+            return ""
+        first_course = first_module.courses.order_by("order").first()
+        if not first_course:
+            return ""
+        first_resource = first_course.resources.filter(is_youtube=True).order_by("order").first()
+        if not first_resource or not first_resource.youtube_url:
+            return ""
+        m = re.search(r"(?:v=|youtu\.be/)([A-Za-z0-9_-]{11})", first_resource.youtube_url)
+        return m.group(1) if m else ""
 
     def _lock_reason(self, obj) -> str | None:
         user = self.context["request"].user
@@ -142,7 +160,7 @@ class FormationDetailSerializer(serializers.ModelSerializer):
         return formation_accessible(self.context["request"].user, obj, accessible_types=types)
 
     def get_cover(self, obj) -> str:
-        return generate_signed_url(obj.cover_key) if obj.cover_key else obj.cover_url
+        return generate_public_url(obj.cover_key) if obj.cover_key else obj.cover_url
 
     def get_locked(self, obj) -> bool:
         user = self.context["request"].user

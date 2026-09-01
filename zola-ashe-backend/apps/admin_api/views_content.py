@@ -43,7 +43,7 @@ from apps.audit.models import AuditAction
 from apps.audit.services import record
 from apps.community.models import Post
 from apps.content.models import Audio, Course, Formation, FormationStatus, LibraryPdf, Module, Quiz, QuizResult, Resource
-from apps.content.services import fetch_youtube_transcript, generate_signed_url, record_quiz_result
+from apps.content.services import fetch_youtube_transcript, generate_public_url, generate_signed_url, record_quiz_result
 
 from .permissions import IsAdmin
 from .serializers import (
@@ -248,12 +248,12 @@ class AdminFormationViewSet(viewsets.ModelViewSet):
         formation.cover_key = saved_key
         formation.cover_url = ""  # On vide cover_url pour utiliser cover_key
         formation.save(update_fields=["cover_key", "cover_url"])
-        
-        signed_url = generate_signed_url(saved_key)
+
+        public_url = generate_public_url(saved_key)
         record(request.user, AuditAction.UPDATE_CONTENT, target_type="Formation",
                target_id=formation.id, payload={"cover_updated": True})
-               
-        return Response({"url": signed_url, "key": saved_key}, status=status.HTTP_200_OK)
+
+        return Response({"url": public_url, "key": saved_key}, status=status.HTTP_200_OK)
 
 
 # ─── Documentation détaillée du CRUD Modules (arbre) ─────────────────────────
@@ -646,7 +646,6 @@ class PdfFirstPageCoverView(APIView):
             return Response({"detail": f"Erreur rendu PDF : {exc}"}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 
         from django.core.files.base import ContentFile
-        from apps.content.services import generate_public_url
 
         cover_key = f"covers/{uuid4().hex}.jpg"
         saved_key = default_storage.save(cover_key, ContentFile(img_bytes))

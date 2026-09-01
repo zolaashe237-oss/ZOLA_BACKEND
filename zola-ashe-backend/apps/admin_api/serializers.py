@@ -179,12 +179,9 @@ class AdminFormationSerializer(serializers.ModelSerializer):
         return Course.objects.filter(module__formation=obj).count()
 
     def get_cover_url(self, obj) -> str:
-        from apps.content.services import generate_signed_url
+        from apps.content.services import generate_public_url
         if obj.cover_key:
-            url = generate_signed_url(obj.cover_key)
-            # In local dev (USE_S3=False), generate_signed_url returns a relative
-            # path like /media/.... Build an absolute URL so the frontend (on a
-            # different port) can reach the file served by Django.
+            url = generate_public_url(obj.cover_key)
             if url and url.startswith("/"):
                 request = self.context.get("request")
                 if request:
