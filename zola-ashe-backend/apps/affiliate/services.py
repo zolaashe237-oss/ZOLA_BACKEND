@@ -62,17 +62,37 @@ def validate_referral(user) -> None:
     Valide le parrainage d'un filleul lors de son premier paiement abonnement.
     Appelé depuis billing.services.activate_paid_payment.
     """
+    import logging
+    logger = logging.getLogger(__name__)
     from .models import Referral, ReferralStatus, AffiliateConfig
+
     try:
         referral = Referral.objects.get(referred=user, status=ReferralStatus.PENDING)
     except Referral.DoesNotExist:
         return
 
     config = AffiliateConfig.get()
-    referral.commission   = config.commission_amount
+    commission = config.commission_amount
+    referral.commission   = commission
     referral.status       = ReferralStatus.VALIDATED
     referral.validated_at = timezone.now()
     referral.save(update_fields=["commission", "status", "validated_at"])
+
+    logger.info(
+        "Parrainage VALIDÉ : parrain=%s (id=%s, +%s FCFA), filleul=%s (id=%s)",
+        referral.referrer.email, referral.referrer.id, commission, user.email, user.id,
+    )
+
+    try:
+        from apps.notifications.models import Notification, NotifType
+        Notification.objects.create(
+            user=referral.referrer,
+            type=NotifType.PAIEMENT,
+            title="Commission de parrainage gagnée !",
+            body=f"Félicitations ! Votre filleul {user.full_name} a souscrit son abonnement. Un gain de {commission:,} FCFA a été crédité sur votre solde de parrainage.".replace(",", " "),
+        )
+    except Exception:
+        pass
 
 
 def get_referral_stats(user) -> dict:

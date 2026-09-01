@@ -260,7 +260,7 @@ def activate_paid_payment(payment: Payment, kind: str) -> None:
     _send_confirmation(user.email, kind, full_name=user.full_name, amount=payment.amount)
     _create_payment_notification(user, kind, payment.amount)
     # Parrainage : valide la commission du parrain au premier abonnement du filleul.
-    if kind in ("INSCRIPTION", "COTISATION"):
+    if kind != "DON":
         try:
             from apps.affiliate.services import validate_referral
             validate_referral(user)
