@@ -13,7 +13,17 @@ from rest_framework.response import Response
 
 from rest_framework.permissions import IsAuthenticated, IsAuthenticatedOrReadOnly
 
-from .models import Audio, Formation, LibraryPdf, LiveSession, Quiz, QuizResult, Resource
+from .models import (
+    Audio,
+    Course,
+    CourseCompletion,
+    Formation,
+    LibraryPdf,
+    LiveSession,
+    Quiz,
+    QuizResult,
+    Resource,
+)
 from .serializers import (
     AudioPublicSerializer,
     FormationDetailSerializer,
@@ -25,6 +35,7 @@ from .serializers import (
     LiveSessionSerializer,
 )
 from .services import (
+    _course_quiz,
     course_completed,
     course_unlocked,
     final_exam_unlocked,
@@ -230,6 +241,11 @@ class ResourceViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({"detail": "Ordre de cours non autorisé.", "lock_reason": "sequential"},
                             status=status.HTTP_403_FORBIDDEN)
 
+        # Si le cours n'a pas de quiz, l'ouverture du flux valide la complétion du cours
+        if not _course_quiz(course):
+            from .models import CourseCompletion
+            CourseCompletion.objects.get_or_create(user=request.user, course=course)
+
         if resource.is_youtube:
             return Response({"kind": "youtube", "url": resource.youtube_url})
         if not resource.bucket_key:
@@ -237,6 +253,31 @@ class ResourceViewSet(viewsets.ReadOnlyModelViewSet):
                             status=status.HTTP_400_BAD_REQUEST)
         return Response({"kind": "file", "url": generate_signed_url(resource.bucket_key),
                          "expires_in": 3600})
+
+
+class CourseViewSet(viewsets.ReadOnlyModelViewSet):
+    """Actions sur un cours : consultation et complétion."""
+    queryset = Course.objects.all()
+    permission_classes = [IsAuthenticated]
+
+    @action(detail=True, methods=["post"], url_path="complete")
+    def complete(self, request, pk=None):
+        from .models import CourseCompletion
+        course = self.get_object()
+        formation = course.module.formation
+        if not formation_accessible(request.user, formation):
+            return Response({"detail": "Formation réservée.", "lock_reason": "subscription"},
+                            status=status.HTTP_403_FORBIDDEN)
+        if not formation_prerequisite_met(request.user, formation):
+            return Response({"detail": "Prérequis de formation non satisfait.", "lock_reason": "formation_prerequisite"},
+                            status=status.HTTP_403_FORBIDDEN)
+        if not course_unlocked(request.user, course):
+            return Response({"detail": "Cours verrouillé.", "lock_reason": "quiz"},
+                            status=status.HTTP_403_FORBIDDEN)
+
+        CourseCompletion.objects.get_or_create(user=request.user, course=course)
+        return Response({"status": "completed", "course_id": course.id, "formation_id": formation.id})
+
 
 
 @extend_schema_view(

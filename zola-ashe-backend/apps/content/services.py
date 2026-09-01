@@ -210,6 +210,8 @@ def _course_quiz(course: Course):
 
 def course_completed(user, course: Course) -> bool:
     """Cours terminé : son QCM est validé, ou il n'a pas de QCM actif."""
+    if not getattr(user, "is_authenticated", False):
+        return False
     quiz = _course_quiz(course)
     if quiz is None:
         return True
@@ -221,6 +223,8 @@ def formation_final_quiz_passed(user, formation: Formation) -> bool:
 
     S'il n'y a pas de quiz final actif, la condition est considérée remplie.
     """
+    if not getattr(user, "is_authenticated", False):
+        return False
     quiz = getattr(formation, "final_exam", None)
     if not (quiz and quiz.active):
         return True
@@ -231,16 +235,54 @@ def formation_final_quiz_passed(user, formation: Formation) -> bool:
 
 def formation_all_courses_completed(user, formation: Formation) -> bool:
     """Tous les cours de la formation sont terminés."""
-    courses = Course.objects.filter(module__formation=formation)
+    if not getattr(user, "is_authenticated", False):
+        return False
+    courses = list(Course.objects.filter(module__formation=formation))
+    if not courses:
+        return True
     return all(course_completed(user, c) for c in courses)
 
 
 def formation_completed(user, formation: Formation) -> bool:
-    """Formation terminée : tous les cours complétés ET quiz final ≥ 14/20."""
-    return (
-        formation_all_courses_completed(user, formation)
-        and formation_final_quiz_passed(user, formation)
-    )
+    """Formation terminée :
+    1. Si des quiz existent (cours ou examen final) : tous les quiz doivent être validés.
+    2. Si aucun quiz n'existe dans toute la formation : l'utilisateur doit avoir complété/suivi
+       les cours de la formation (via CourseCompletion).
+    """
+    if not getattr(user, "is_authenticated", False):
+        return False
+
+    from .models import CourseCompletion
+
+    courses = list(Course.objects.filter(module__formation=formation))
+    if not courses:
+        return True
+
+    # 1. Vérification des quiz de cours (si présents)
+    courses_with_quiz = [c for c in courses if _course_quiz(c) is not None]
+    if courses_with_quiz:
+        if not all(
+            QuizResult.objects.filter(user=user, quiz=_course_quiz(c), validated=True).exists()
+            for c in courses_with_quiz
+        ):
+            return False
+
+    # 2. Vérification de l'examen final (si présent)
+    quiz_final = getattr(formation, "final_exam", None)
+    if quiz_final and quiz_final.active:
+        if not QuizResult.objects.filter(
+            user=user, quiz=quiz_final, score__gte=INTER_FORMATION_PASS_THRESHOLD
+        ).exists():
+            return False
+
+    # 3. Si aucun quiz n'existe ni sur les cours ni en examen final :
+    #    la complétion exige que le membre ait suivi les cours (CourseCompletion)
+    if not courses_with_quiz and not (quiz_final and quiz_final.active):
+        completed_count = CourseCompletion.objects.filter(user=user, course__in=courses).count()
+        if completed_count < len(courses):
+            return False
+
+    return True
 
 
 def formation_prerequisite_met(user, formation: Formation) -> bool:

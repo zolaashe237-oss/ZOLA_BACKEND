@@ -150,6 +150,26 @@ class SequentialUnlockTests(APITestCase):
         parent = next(m for m in data["modules"] if m["id"] == self.module.id)
         self.assertFalse(parent["children"][0]["access"]["locked"])
 
+    def test_inter_formation_sequential_unlock(self):
+        f2 = make_formation(title="Formation 2", order=2, branch="MEMBRE")
+        m2 = Module.objects.create(formation=f2, title="M2", order=1)
+        Course.objects.create(module=m2, title="C2-1", order=1)
+
+        # F1 a des cours non terminés -> F2 est verrouillée pour ce membre
+        res = self.client.get(f"/api/formations/{f2.id}/")
+        self.assertEqual(res.status_code, 200)
+        self.assertTrue(res.data["locked"])
+        self.assertEqual(res.data["lock_reason"], "formation_prerequisite")
+
+        # F1 valide son quiz -> F1 terminée -> F2 se débloque immédiatement !
+        self.client.post(f"/api/quizzes/{self.quiz1.id}/submit/",
+                         {"answers": good_answers(self.quiz1)}, format="json")
+        res2 = self.client.get(f"/api/formations/{f2.id}/")
+        self.assertEqual(res2.status_code, 200)
+        self.assertFalse(res2.data["locked"])
+        self.assertIsNone(res2.data["lock_reason"])
+
+
 
 @override_settings(**TEST_SETTINGS)
 class QuizGradingTests(APITestCase):

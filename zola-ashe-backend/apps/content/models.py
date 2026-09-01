@@ -370,3 +370,19 @@ class LibraryPdf(models.Model):
 
     def __str__(self):
         return self.title
+
+
+class CourseCompletion(models.Model):
+    """Marquage d'un cours terminé par un membre (pour les cours avec ou sans quiz)."""
+    user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="course_completions")
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="completions")
+    completed_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "course_completions"
+        unique_together = ("user", "course")
+        ordering = ["-completed_at"]
+
+    def __str__(self):
+        return f"{self.user_id} - Course {self.course_id}"
+
