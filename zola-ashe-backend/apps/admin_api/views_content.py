@@ -5,16 +5,8 @@ from django.conf import settings
 from django.core.files.storage import default_storage
 
 
-def _read_private_file(key: str) -> bytes:
-    """Lit un fichier depuis le bucket privé (PDFs, audios, vidéos).
-
-    En dev (USE_S3=False), repli sur default_storage.
-    En prod, utilise directement boto3 sur R2_PRIVATE_BUCKET.
-    """
-    if not getattr(settings, "USE_S3", False):
-        with default_storage.open(key, "rb") as f:
-            return f.read()
-
+def _boto3_private_client():
+    """Retourne un client boto3 configuré sur le bucket privé R2/MinIO."""
     import boto3
     from botocore.client import Config
 
@@ -32,8 +24,38 @@ def _read_private_file(key: str) -> bytes:
     )
     bucket = getattr(settings, "R2_PRIVATE_BUCKET",
                      getattr(settings, "AWS_STORAGE_BUCKET_NAME", "zola-ashe-private"))
+    return client, bucket
+
+
+def _read_private_file(key: str) -> bytes:
+    """Lit un fichier depuis le bucket privé (PDFs, audios, vidéos).
+
+    En dev (USE_S3=False), repli sur default_storage.
+    En prod, utilise directement boto3 sur R2_PRIVATE_BUCKET.
+    """
+    if not getattr(settings, "USE_S3", False):
+        with default_storage.open(key, "rb") as f:
+            return f.read()
+
+    client, bucket = _boto3_private_client()
     obj = client.get_object(Bucket=bucket, Key=key.lstrip("/"))
     return obj["Body"].read()
+
+
+def _write_private_file(key: str, file) -> str:
+    """Sauvegarde un fichier dans le bucket privé (PDFs, audios, vidéos).
+
+    En dev (USE_S3=False), repli sur default_storage.
+    En prod, uploade directement sur R2_PRIVATE_BUCKET via boto3.
+    Retourne la clé sauvegardée (identique à `key`).
+    """
+    if not getattr(settings, "USE_S3", False):
+        return default_storage.save(key, file)
+
+    client, bucket = _boto3_private_client()
+    file.seek(0)
+    client.upload_fileobj(file, bucket, key)
+    return key
 from drf_spectacular.types import OpenApiTypes
 from drf_spectacular.utils import (
     OpenApiExample,
@@ -639,7 +661,12 @@ class ContentUploadView(APIView):
             return Response({"detail": f"Fichier trop volumineux (max {limit} Mo)."},
                             status=status.HTTP_400_BAD_REQUEST)
         key = f"{_PREFIX[ctype]}/{uuid4().hex}_{file.name}"
-        saved = default_storage.save(key, file)
+        # PDF/audio/vidéo → bucket privé (accès signé pour les membres)
+        # Image → bucket public via default_storage
+        if ctype in ("PDF", "AUDIO", "VIDEO"):
+            saved = _write_private_file(key, file)
+        else:
+            saved = default_storage.save(key, file)
         return Response({"bucket_key": saved, "size_mo": round(file.size / (1024 * 1024), 2)},
                         status=status.HTTP_201_CREATED)
 
