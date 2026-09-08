@@ -205,6 +205,10 @@ def activate_paid_payment(payment: Payment, kind: str) -> None:
     user = payment.user
     period = settings.COTISATION_PERIOD_DAYS
 
+    if not user.email_verified:
+        user.email_verified = True
+        user.save(update_fields=["email_verified"])
+
     if kind == "INSCRIPTION":
         # Ouvre (ou réactive) l'adhésion et inclut la 1ʳᵉ période d'accès.
         sub, _ = Subscription.objects.get_or_create(
