@@ -218,6 +218,11 @@ def activate_paid_payment(payment: Payment, kind: str) -> None:
         extend_subscription(sub, period)        # 1ʳᵉ période incluse
         payment.subscription = sub
         user.set_status(UserStatus.ACTIF)
+        levels = list(user.access_levels or [])
+        if "MEMBRE" not in levels:
+            levels.append("MEMBRE")
+            user.access_levels = levels
+            user.save(update_fields=["access_levels"])
 
     elif kind == "COTISATION":
         # La cotisation prolonge l'échéance d'un adhérent et (re)active l'accès.

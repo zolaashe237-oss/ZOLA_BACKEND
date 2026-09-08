@@ -6,6 +6,7 @@ from uuid import uuid4
 from drf_spectacular.utils import OpenApiParameter, extend_schema, extend_schema_view, inline_serializer
 from rest_framework import mixins, serializers as drf_serializers, status, viewsets
 from rest_framework.decorators import action
+from rest_framework.pagination import PageNumberPagination
 from rest_framework.response import Response
 from rest_framework_simplejwt.token_blacklist.models import BlacklistedToken, OutstandingToken
 
@@ -38,6 +39,12 @@ def _revoke_tokens(user):
         BlacklistedToken.objects.get_or_create(token=token)
 
 
+class MemberPagination(PageNumberPagination):
+    page_size = 20
+    page_size_query_param = "page_size"
+    max_page_size = 1000
+
+
 @extend_schema_view(
     list=extend_schema(tags=["Admin · Membres"], summary="Lister les membres",
                        description="Membres filtrables par `?status=` (ACTIF/RESTREINT/BLOQUE) et `?search=`.",
@@ -51,6 +58,7 @@ class MemberViewSet(mixins.ListModelMixin, mixins.RetrieveModelMixin,
                     mixins.CreateModelMixin, mixins.UpdateModelMixin,
                     mixins.DestroyModelMixin, viewsets.GenericViewSet):
     permission_classes = [IsAdmin]
+    pagination_class = MemberPagination
 
     def get_serializer_class(self):
         if self.action in ["retrieve", "create", "update", "partial_update"]:
