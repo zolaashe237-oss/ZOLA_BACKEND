@@ -244,10 +244,9 @@ def formation_all_courses_completed(user, formation: Formation) -> bool:
 
 
 def formation_completed(user, formation: Formation) -> bool:
-    """Formation terminée :
-    1. Si des quiz existent (cours ou examen final) : tous les quiz doivent être validés.
-    2. Si aucun quiz n'existe dans toute la formation : l'utilisateur doit avoir complété/suivi
-       les cours de la formation (via CourseCompletion).
+    """Formation terminée (pour le déblocage inter-formation) :
+    - Quiz final actif présent → score ≥ INTER_FORMATION_PASS_THRESHOLD requis.
+    - Pas de quiz final        → toutes les vidéos regardées (CourseCompletion) suffisent.
     """
     if not getattr(user, "is_authenticated", False):
         return False
@@ -258,31 +257,15 @@ def formation_completed(user, formation: Formation) -> bool:
     if not courses:
         return True
 
-    # 1. Vérification des quiz de cours (si présents)
-    courses_with_quiz = [c for c in courses if _course_quiz(c) is not None]
-    if courses_with_quiz:
-        if not all(
-            QuizResult.objects.filter(user=user, quiz=_course_quiz(c), validated=True).exists()
-            for c in courses_with_quiz
-        ):
-            return False
-
-    # 2. Vérification de l'examen final (si présent)
     quiz_final = getattr(formation, "final_exam", None)
     if quiz_final and quiz_final.active:
-        if not QuizResult.objects.filter(
+        return QuizResult.objects.filter(
             user=user, quiz=quiz_final, score__gte=INTER_FORMATION_PASS_THRESHOLD
-        ).exists():
-            return False
+        ).exists()
 
-    # 3. Si aucun quiz n'existe ni sur les cours ni en examen final :
-    #    la complétion exige que le membre ait suivi les cours (CourseCompletion)
-    if not courses_with_quiz and not (quiz_final and quiz_final.active):
-        completed_count = CourseCompletion.objects.filter(user=user, course__in=courses).count()
-        if completed_count < len(courses):
-            return False
-
-    return True
+    # Pas de quiz final → regarder toutes les vidéos débloque la formation suivante
+    completed_count = CourseCompletion.objects.filter(user=user, course__in=courses).count()
+    return completed_count >= len(courses)
 
 
 def formation_prerequisite_met(user, formation: Formation) -> bool:

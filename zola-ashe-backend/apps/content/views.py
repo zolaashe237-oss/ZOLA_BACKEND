@@ -241,10 +241,11 @@ class ResourceViewSet(viewsets.ReadOnlyModelViewSet):
             return Response({"detail": "Ordre de cours non autorisé.", "lock_reason": "sequential"},
                             status=status.HTTP_403_FORBIDDEN)
 
-        # Si le cours n'a pas de quiz, l'ouverture du flux valide la complétion du cours
-        if not _course_quiz(course):
-            from .models import CourseCompletion
-            CourseCompletion.objects.get_or_create(user=request.user, course=course)
+        # L'ouverture d'une vidéo enregistre toujours la complétion du cours.
+        # Pour les cours avec quiz, cela permet le déblocage inter-formation
+        # (regarder toutes les vidéos suffit quand il n'y a pas de quiz final).
+        from .models import CourseCompletion
+        CourseCompletion.objects.get_or_create(user=request.user, course=course)
 
         if resource.is_youtube:
             return Response({"kind": "youtube", "url": resource.youtube_url})
