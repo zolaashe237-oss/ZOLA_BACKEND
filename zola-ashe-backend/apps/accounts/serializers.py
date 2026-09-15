@@ -9,7 +9,7 @@ class UserSerializer(serializers.ModelSerializer):
     """Représentation publique d'un membre (profil « moi »)."""
     class Meta:
         model = User
-        fields = ("id", "email", "full_name", "photo", "role", "status",
+        fields = ("id", "email", "full_name", "phone", "photo", "role", "status",
                   "email_verified", "nb_warnings", "access_levels", "created_at")
         read_only_fields = ("id", "email", "role", "status", "email_verified",
                             "nb_warnings", "access_levels", "created_at")
