@@ -1,5 +1,6 @@
 """Service d'import de formation depuis une playlist YouTube."""
 import re
+import requests as _requests
 from urllib.parse import parse_qs, urlparse
 
 from django.conf import settings
@@ -73,6 +74,32 @@ def _best_thumb(thumbs: dict, fallback_id: str = "") -> str:
     return f"https://img.youtube.com/vi/{fallback_id}/mqdefault.jpg" if fallback_id else ""
 
 
+def _fetch_playlist_og_image(playlist_id: str) -> str:
+    """
+    Récupère la miniature réelle de la playlist depuis la page YouTube (og:image).
+    L'API YouTube retourne la miniature de la première vidéo ; la page HTML
+    retourne la miniature sélectionnée comme couverture dans YouTube Studio.
+    """
+    try:
+        resp = _requests.get(
+            f"https://www.youtube.com/playlist?list={playlist_id}",
+            headers={
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                "Accept-Language": "fr-FR,fr;q=0.9",
+            },
+            cookies={"CONSENT": "YES+cb"},
+            timeout=8,
+        )
+        if not resp.ok:
+            return ""
+        m = re.search(r'<meta\s+property="og:image"\s+content="([^"]+)"', resp.text)
+        if not m:
+            m = re.search(r'"og:image"[^>]*content="([^"]+)"', resp.text)
+        return m.group(1) if m else ""
+    except Exception:
+        return ""
+
+
 def _fetch_playlist_info(yt, playlist_id: str) -> tuple[str, str]:
     """Renvoie (title, cover_url) de la playlist."""
     resp = yt.playlists().list(part="snippet", id=playlist_id).execute()
@@ -80,7 +107,11 @@ def _fetch_playlist_info(yt, playlist_id: str) -> tuple[str, str]:
     if not items:
         raise ValueError(f"Playlist introuvable ou privée (id : {playlist_id}).")
     snippet = items[0]["snippet"]
-    return snippet["title"], _best_thumb(snippet.get("thumbnails", {}))
+    title = snippet["title"]
+    # La page YouTube affiche la miniature réelle (couverture YouTube Studio) via og:image.
+    # L'API Data v3 retourne souvent la miniature de la première vidéo à la place.
+    cover_url = _fetch_playlist_og_image(playlist_id) or _best_thumb(snippet.get("thumbnails", {}))
+    return title, cover_url
 
 
 def _fetch_playlist_videos(yt, playlist_id: str, limit: int | None = None) -> list[dict]:
