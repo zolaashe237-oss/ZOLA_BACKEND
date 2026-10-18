@@ -225,7 +225,7 @@ docker compose -f docker-compose.prod.yml exec backend \
   python manage.py shell -c "
 from apps.billing.services import resolve_plan
 from apps.content.models import Formation
-from apps.ai_quiz.gemini_client import ping
+from apps.ai_quiz.ai_client import ping
 print('imports OK')
 print('formations:', Formation.objects.count())
 print('INSCRIPTION plan:', resolve_plan('INSCRIPTION').amount, 'FCFA')
@@ -236,7 +236,7 @@ print('INSCRIPTION plan:', resolve_plan('INSCRIPTION').amount, 'FCFA')
 
 ```bash
 docker compose -f docker-compose.prod.yml exec backend \
-  python manage.py shell -c "from apps.ai_quiz.gemini_client import ping; print(ping())"
+  python manage.py shell -c "from apps.ai_quiz.ai_client import ping; print(ping())"
 ```
 
 **Attendu** : `pong: gemini-flash-latest`

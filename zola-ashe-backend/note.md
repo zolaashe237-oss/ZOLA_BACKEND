@@ -9,7 +9,7 @@ Bilan mi-sprint : dim/mar 8 juillet · Livraison finale : ven 11 juillet 18h00
 
 | # | Tâche | Livrable |
 |---|---|---|
-| IA-B1 | Config Gemini | `apps/ai_quiz/gemini_client.py` — `ping()`, `generate_text()`, `generate_json(schema=…)` avec retry × 2 |
+| IA-B1 | Config Gemini | `apps/ai_quiz/ai_client.py` — `ping()`, `generate_text()`, `generate_json(schema=…)` avec retry × 2 |
 | IA-B2 | Modèles + migration | 3 tables : `ai_quiz_jobs` (UUID), `ai_quiz_questions`, `ai_qro_answers` + 5 index |
 | IA-B3 | Extracteur YouTube | **YouTube Data API v3 + OAuth 2.0** (`googleapiclient` + `google-auth`), FR → EN → 1ère dispo, 6 formats d'URL, ne fonctionne que sur les vidéos de la chaîne (contrainte `captions.download`) |
 | IA-B4 | Extracteur PDF | PyMuPDF via `default_storage` (marche local + R2), cleaner headers/footers/contrôle, cap 200k chars |
@@ -100,7 +100,7 @@ docker exec zola-ashe-backend-backend-1 python manage.py test apps.ai_quiz -v 2
 
 # Sanity check
 docker exec zola-ashe-backend-backend-1 python manage.py shell -c \
-  "from apps.ai_quiz.gemini_client import ping; print(ping())"
+  "from apps.ai_quiz.ai_client import ping; print(ping())"
 # Attendu : pong: gemini-2.5-flash
 ```
 

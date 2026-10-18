@@ -13,7 +13,7 @@ from rest_framework.response import Response
 
 from apps.admin_api.permissions import IsAdmin
 
-from .gemini_client import AIConfigError, AIGenerationError, generate_json
+from .ai_client import AIConfigError, AIGenerationError, generate_json
 from .models import (
     AIQROAnswer,
     AIQuestion,

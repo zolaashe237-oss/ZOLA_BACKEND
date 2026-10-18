@@ -196,7 +196,7 @@ docker exec zola-ashe-backend-db-1 psql -U zola -d zola -c \
 
 ```bash
 docker exec zola-ashe-backend-backend-1 python manage.py shell -c \
-  "from apps.ai_quiz.gemini_client import ping; print(ping())"
+  "from apps.ai_quiz.ai_client import ping; print(ping())"
 ```
 
 Attendu : `pong: gemini-flash-latest`

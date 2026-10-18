@@ -399,13 +399,24 @@ MEDIA_ROOT = BASE_DIR / "media"
 
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
 
-# --- IA (Gemini 2.5 Flash) --------------------------------------------------
+# --- IA (multi-fournisseur : gemini | openai | anthropic) ------------------
+# Le fournisseur actif est choisi par AI_PROVIDER ; voir apps/ai_quiz/ai_client.py.
+AI_PROVIDER = env("AI_PROVIDER", default="gemini")
 # Le sprint mentionne « Gemini 3.5 Flash » qui n'existe pas côté Google ; on
 # utilise le modèle courant équivalent (2.5 Flash) via variable configurable.
 GEMINI_API_KEY = env("GEMINI_API_KEY", default="")
 GEMINI_MODEL = env("GEMINI_MODEL", default="gemini-2.5-flash")
 GEMINI_TIMEOUT_S = env.int("GEMINI_TIMEOUT_S", default=60)
 GEMINI_MAX_RETRIES = env.int("GEMINI_MAX_RETRIES", default=2)
+OPENAI_API_KEY = env("OPENAI_API_KEY", default="")
+OPENAI_MODEL = env("OPENAI_MODEL", default="gpt-5.4-mini")
+OPENAI_TRANSCRIBE_MODEL = env("OPENAI_TRANSCRIBE_MODEL", default="gpt-4o-transcribe")
+ANTHROPIC_API_KEY = env("ANTHROPIC_API_KEY", default="")
+ANTHROPIC_MODEL = env("ANTHROPIC_MODEL", default="claude-opus-5-5")
+# Timeout / retries communs à tous les fournisseurs (repli sur les anciennes
+# variables GEMINI_* pour ne pas casser les .env existants).
+AI_TIMEOUT_S = env.int("AI_TIMEOUT_S", default=GEMINI_TIMEOUT_S)
+AI_MAX_RETRIES = env.int("AI_MAX_RETRIES", default=GEMINI_MAX_RETRIES)
 AI_ENABLED = env.bool("AI_ENABLED", default=True)
 YOUTUBE_API_KEY = env("YOUTUBE_API_KEY", default="")
 

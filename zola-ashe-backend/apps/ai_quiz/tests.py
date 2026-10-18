@@ -394,7 +394,7 @@ class SubmitQROEndpointTest(TestCase):
         self.assertEqual(answer.verdict, "VALIDATED")
 
     def test_gemini_failure_falls_back_to_needs_review(self):
-        from .gemini_client import AIGenerationError
+        from .ai_client import AIGenerationError
         self.client.force_authenticate(self.member)
         with patch("apps.ai_quiz.views.generate_json") as mock_gen:
             mock_gen.side_effect = AIGenerationError("timeout")

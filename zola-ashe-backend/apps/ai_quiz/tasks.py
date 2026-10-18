@@ -30,7 +30,7 @@ def generate_quiz_task(self, job_id: str) -> str:
         extract_pdf_text,
         extract_youtube_transcript,
     )
-    from .gemini_client import AIGenerationError, generate_json
+    from .ai_client import AIGenerationError, generate_json
     from .models import (
         AIQuestion,
         AIQuizJob,
@@ -216,7 +216,7 @@ def _classify_level_and_rank(job, source_text: str) -> None:
     Best-effort : les erreurs Gemini n'invalident PAS la génération. On log et
     on laisse les champs vides — l'admin les fixe à la main dans le back-office.
     """
-    from .gemini_client import AIGenerationError, generate_json
+    from .ai_client import AIGenerationError, generate_json
     from .prompts import (
         LEVEL_CLASSIFICATION_SCHEMA,
         PromptValidationError,

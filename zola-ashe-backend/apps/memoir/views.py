@@ -133,7 +133,7 @@ class MemoirImageUploadView(APIView):
 
 
 class TranscribeView(APIView):
-    """POST — transcrit un enregistrement audio via Gemini."""
+    """POST — transcrit un enregistrement audio via le fournisseur IA actif."""
 
     permission_classes = [IsAuthenticated]
     parser_classes = [MultiPartParser]
@@ -145,34 +145,20 @@ class TranscribeView(APIView):
             400: OpenApiResponse(description="Fichier audio manquant"),
             503: OpenApiResponse(description="Service IA indisponible"),
         },
-        summary="Transcription audio (Gemini) pour Mon Histoire",
+        summary="Transcription audio (IA) pour Mon Histoire",
     )
     def post(self, request):
         audio_file = request.FILES.get("audio")
         if not audio_file:
             return Response({"detail": "Fichier audio requis (champ 'audio')."}, status=status.HTTP_400_BAD_REQUEST)
 
-        # Le SDK Gemini encode lui-même en base64 — passer les bytes bruts
         audio_bytes = audio_file.read()
         # Supprimer les paramètres de codec (ex: "audio/webm;codecs=opus" → "audio/webm")
         mime_type = (audio_file.content_type or "audio/webm").split(";")[0].strip()
 
         try:
-            from apps.ai_quiz.gemini_client import get_model
-            model = get_model()
-            response = model.generate_content(
-                [
-                    {"mime_type": mime_type, "data": audio_bytes},
-                    (
-                        "Transcris fidèlement ce témoignage oral en français. "
-                        "Conserve le style parlé et les tournures naturelles. "
-                        "Ne corrige pas les imperfections grammaticales du registre oral. "
-                        "Renvoie uniquement la transcription, sans commentaire ni ajout."
-                    ),
-                ],
-                request_options={"timeout": 60},
-            )
-            transcript = (response.text or "").strip()
+            from apps.ai_quiz.ai_client import transcribe_audio
+            transcript = transcribe_audio(audio_bytes, mime_type, audio_file.name or "audio.webm")
             logger.info("memoir.transcribe user=%s chars=%d", request.user.email, len(transcript))
             return Response({"transcript": transcript})
         except Exception as exc:

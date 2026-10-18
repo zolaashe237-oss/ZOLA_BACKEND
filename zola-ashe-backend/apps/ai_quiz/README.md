@@ -79,7 +79,7 @@ sémantiquement les réponses ouvertes des membres via Gemini 2.5 Flash.
 apps/ai_quiz/
 ├── __init__.py
 ├── apps.py                       # AppConfig
-├── gemini_client.py              # IA-B1 : ping(), generate_text(), generate_json()
+├── ai_client.py              # IA-B1 : ping(), generate_text(), generate_json()
 ├── models.py                     # IA-B2 : AIQuizJob, AIQuestion, AIQROAnswer
 ├── admin.py                      # Django admin pour debug
 ├── prompts.py                    # IA-B5 : builders + schemas + validateurs
@@ -359,7 +359,7 @@ docker exec zola-ashe-backend-backend-1 python manage.py test apps.ai_quiz -v 2
 
 # Sanity check du client
 docker exec zola-ashe-backend-backend-1 python manage.py shell -c \
-  "from apps.ai_quiz.gemini_client import ping; print(ping())"
+  "from apps.ai_quiz.ai_client import ping; print(ping())"
 # Attendu : pong: gemini-2.5-flash
 ```
 

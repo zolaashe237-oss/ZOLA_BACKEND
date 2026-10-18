@@ -43,8 +43,10 @@ python-docx>=1.1
 # --- Observabilité (optionnel) ---
 sentry-sdk>=2.0
 
-# --- IA (agent Gemini + extraction PDF/YouTube) ---
+# --- IA (agent Gemini / OpenAI / Claude + extraction PDF/YouTube) ---
 google-generativeai>=0.8
+openai>=3.35,<4
+anthropic>=1.15,<2
 google-api-python-client>=2.140
 google-auth>=2.30
 google-auth-oauthlib>=1.2

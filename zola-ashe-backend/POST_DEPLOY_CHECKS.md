@@ -12,7 +12,7 @@ modèle demandé.
 
 ```bash
 docker compose -f docker-compose.prod.yml exec backend \
-  python manage.py shell -c "from apps.ai_quiz.gemini_client import ping; print(ping())"
+  python manage.py shell -c "from apps.ai_quiz.ai_client import ping; print(ping())"
 ```
 
 **Attendu** : `pong: gemini-flash-latest`

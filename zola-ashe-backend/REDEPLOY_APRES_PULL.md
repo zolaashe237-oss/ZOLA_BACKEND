@@ -58,7 +58,7 @@ Détails complets dans `POST_DEPLOY_CHECKS.md`. Version courte :
 ```bash
 # Ping Gemini réel (~10 s)
 docker compose -f docker-compose.prod.yml exec backend \
-  python manage.py shell -c "from apps.ai_quiz.gemini_client import ping; print(ping())"
+  python manage.py shell -c "from apps.ai_quiz.ai_client import ping; print(ping())"
 
 # Tarifs actifs (business critical)
 docker exec zola-ashe-backend-db-1 psql -U zola -d zola -c \
