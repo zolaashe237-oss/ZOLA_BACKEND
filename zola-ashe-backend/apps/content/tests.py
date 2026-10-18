@@ -161,9 +161,16 @@ class SequentialUnlockTests(APITestCase):
         self.assertTrue(res.data["locked"])
         self.assertEqual(res.data["lock_reason"], "formation_prerequisite")
 
-        # F1 valide son quiz -> F1 terminée -> F2 se débloque immédiatement !
+        # Valider le quiz seul ne suffit pas : sans quiz final, F1 est terminée
+        # quand toutes ses vidéos sont regardées (CourseCompletion).
         self.client.post(f"/api/quizzes/{self.quiz1.id}/submit/",
                          {"answers": good_answers(self.quiz1)}, format="json")
+        self.assertTrue(self.client.get(f"/api/formations/{f2.id}/").data["locked"])
+
+        # F1 : tous les cours complétés -> F2 se débloque immédiatement
+        for course in (self.c1, self.c2):
+            r = self.client.post(f"/api/courses/{course.id}/complete/")
+            self.assertEqual(r.status_code, 200)
         res2 = self.client.get(f"/api/formations/{f2.id}/")
         self.assertEqual(res2.status_code, 200)
         self.assertFalse(res2.data["locked"])
