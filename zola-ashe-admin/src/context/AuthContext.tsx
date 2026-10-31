@@ -11,7 +11,11 @@ interface AuthContextValue {
   user: User | null;
   loading: boolean;
   login: (email: string, password: string) => Promise<void>;
+  /** Finalise la session après vérification OTP depuis la page de login. */
+  finalizeLogin: (access: string, user: User) => void;
   logout: () => Promise<void>;
+  /** Recharge le profil courant depuis /me/ (utile après édition). */
+  refreshUser: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthContextValue | undefined>(undefined);
@@ -47,13 +51,18 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = useCallback(async (email: string, password: string) => {
     const { data } = await authApi.login({ email, password });
-    if (data.user.role !== "ADMIN") {
-      // Ne pas conserver de session pour un compte non administrateur.
-      setAccessToken(null);
-      throw new NotAdminError();
-    }
+    // Si le backend demande une vérification OTP, on lève une erreur spéciale.
+    if (data.requires_otp) throw Object.assign(new Error("OTP_REQUIRED"), { otpRequired: true });
+    if (!data.user || !data.access) throw new Error("Réponse inattendue du serveur.");
+    if (data.user.role !== "ADMIN") { setAccessToken(null); throw new NotAdminError(); }
     setAccessToken(data.access);
     setUser(data.user);
+  }, []);
+
+  const finalizeLogin = useCallback((access: string, userData: User) => {
+    if (userData.role !== "ADMIN") { setAccessToken(null); throw new NotAdminError(); }
+    setAccessToken(access);
+    setUser(userData);
   }, []);
 
   const logout = useCallback(async () => {
@@ -65,8 +74,16 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
+  const refreshUser = useCallback(async () => {
+    try {
+      const me = await authApi.me();
+      if (me.data.role !== "ADMIN") return;
+      setUser(me.data);
+    } catch { /* silencieux */ }
+  }, []);
+
   return (
-    <AuthContext.Provider value={{ user, loading, login, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, finalizeLogin, logout, refreshUser }}>
       {children}
     </AuthContext.Provider>
   );

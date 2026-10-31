@@ -6,20 +6,28 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "lint": "next lint"
+    "lint": "next lint",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
+    "axios": "^1.7.0",
     "next": "^15.0.0",
     "react": "^18.3.0",
-    "react-dom": "^18.3.0",
-    "axios": "^1.7.0"
+    "react-dom": "^18.3.0"
   },
   "devDependencies": {
-    "typescript": "^5.5.0",
+    "@testing-library/jest-dom": "^7.0.1",
+    "@testing-library/react": "^16.3.3",
+    "@testing-library/user-event": "^14.6.6",
     "@types/node": "^22.0.0",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
+    "@vitejs/plugin-react": "^6.1.1",
     "eslint": "^9.0.0",
-    "eslint-config-next": "^15.0.0"
+    "eslint-config-next": "^15.0.0",
+    "jsdom": "^29.1.1",
+    "typescript": "^5.5.0",
+    "vitest": "^4.1.11"
   }
 }

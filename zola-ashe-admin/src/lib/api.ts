@@ -12,9 +12,26 @@ export const setAccessToken = (token: string | null) => {
 };
 
 export const api = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000/api",
+  baseURL: process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010/api",
   withCredentials: true,
 });
+
+/**
+ * Résout une URL absolue pour un média.
+ * Django retourne parfois des chemins relatifs (/media/...) en développement.
+ */
+export function getMediaUrl(path: string | null | undefined): string {
+  if (!path) return "";
+  if (path.startsWith("http") || path.startsWith("blob:") || path.startsWith("data:")) {
+    return path;
+  }
+  
+  // URL de base du serveur backend (sans le suffixe /api)
+  const apiBase = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8010/api";
+  const serverRoot = apiBase.replace(/\/api$/, "").replace(/\/$/, "");
+  
+  return `${serverRoot}${path.startsWith("/") ? "" : "/"}${path}`;
+}
 
 api.interceptors.request.use((config) => {
   if (accessToken) {
@@ -32,8 +49,14 @@ api.interceptors.response.use(
     const original = error.config;
     // Ne jamais relancer un refresh sur une route /auth/ (sinon le 401 du
     // refresh lui-même rappelle le refresh → blocage). Laisse passer l'erreur.
-    const isAuthRoute = typeof original?.url === "string" && original.url.includes("/auth/");
-    if (error.response?.status === 401 && original && !original._retry && !isAuthRoute) {
+    const isAuthRoute =
+      typeof original?.url === "string" && original.url.includes("/auth/");
+    if (
+      error.response?.status === 401 &&
+      original &&
+      !original._retry &&
+      !isAuthRoute
+    ) {
       original._retry = true;
       try {
         refreshing =
@@ -54,5 +77,5 @@ api.interceptors.response.use(
       }
     }
     return Promise.reject(error);
-  }
+  },
 );
