@@ -278,7 +278,11 @@ class SendRemindersView(APIView):
     permission_classes = [IsAdmin]
 
     def post(self, request):
+        from apps.accounts.features import monthly_subscription_enabled
         from apps.billing.tasks import send_payment_reminder
+        if not monthly_subscription_enabled():
+            return Response({"detail": "La cotisation mensuelle est désactivée : aucune relance à envoyer."},
+                            status=status.HTTP_400_BAD_REQUEST)
         user_id = request.data.get("user_id")
         late_threshold = timezone.now() - timedelta(days=30)
         targets = []

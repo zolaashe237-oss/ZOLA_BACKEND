@@ -54,9 +54,10 @@ class SequentialCourseAccessMiddleware:
             if previous_course is None:
                 return self.get_response(request)
 
-            # Vérifier si le cours précédent a un QCM actif
-            previous_quiz = getattr(previous_course, "quiz", None)
-            if previous_quiz is None or not previous_quiz.active:
+            # Vérifier si le cours précédent a un QCM actif (aucun si les quiz sont désactivés)
+            from .services import _course_quiz
+            previous_quiz = _course_quiz(previous_course)
+            if previous_quiz is None:
                 # Pas de QCM → pas de prérequis
                 return self.get_response(request)
 

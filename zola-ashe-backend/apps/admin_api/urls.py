@@ -83,6 +83,7 @@ urlpatterns = [
 
     # Paramètres globaux
     path("settings/", vset.AdminGlobalSettingsView.as_view(), name="admin-settings"),
+    path("settings/features/", vset.AdminFeatureSettingsView.as_view(), name="admin-settings-features"),
     path("config/social-links/", vset.AdminGlobalSettingsView.as_view(), name="admin-config-social-links"),
     path("settings/social-links/", vset.AdminGlobalSettingsView.as_view(), name="admin-settings-social-links"),
 

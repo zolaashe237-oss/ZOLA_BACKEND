@@ -1,7 +1,12 @@
 """Utilisateurs, statuts et vérification OTP (CDC Partie I glossaire, §3.3, §4.1)."""
+import logging
+import zlib
+
 from django.contrib.auth.models import AbstractBaseUser, BaseUserManager, PermissionsMixin
 from django.db import models
 from django.utils import timezone
+
+logger = logging.getLogger(__name__)
 
 
 class UserStatus(models.TextChoices):
@@ -105,6 +110,18 @@ class GlobalSettings(models.Model):
     twitter_url = models.URLField(blank=True)
     instagram_url = models.URLField(blank=True)
     youtube_url = models.URLField(blank=True)
+
+    # Interrupteurs de fonctionnalités pilotés depuis le back-office.
+    quiz_enabled = models.BooleanField(
+        default=True,
+        help_text="Désactivé : QCM inaccessibles et plus requis pour progresser dans les formations.")
+    monthly_subscription_enabled = models.BooleanField(
+        default=True,
+        help_text="Désactivé : plus de cotisation mensuelle, l'accès des adhérents n'expire plus.")
+    hidden_sections = models.JSONField(
+        default=list, blank=True,
+        help_text="Sections de l'espace membre masquées (voir accounts.features.MEMBER_SECTIONS).")
+
     updated_at = models.DateTimeField(auto_now=True)
 
     class Meta:
@@ -115,8 +132,58 @@ class GlobalSettings(models.Model):
     def save(self, *args, **kwargs):
         self.pk = 1
         super().save(*args, **kwargs)
+        # Invalidation immédiate, puis à nouveau à la validation de la transaction :
+        # sinon une requête concurrente pourrait remettre en cache l'ancienne valeur
+        # (encore visible en base) avant le COMMIT.
+        from django.db import transaction
+        _invalidate_global_settings_cache()
+        transaction.on_commit(_invalidate_global_settings_cache)
 
     @classmethod
     def load(cls):
         obj, created = cls.objects.get_or_create(pk=1)
         return obj
+
+    @classmethod
+    def cached(cls):
+        """Singleton lu depuis le cache (60 s) — pour les contrôles appelés à chaque requête.
+
+        On met en cache les valeurs des champs (pas l'instance « picklée ») sous une
+        clé qui dépend de la liste des champs : un déploiement qui modifie le modèle
+        n'est jamais servi par une entrée de l'ancien schéma. Si le cache est
+        indisponible, on lit la base plutôt que de faire échouer la requête.
+        """
+        from django.core.cache import cache
+        key = _global_settings_cache_key()
+        try:
+            values = cache.get(key)
+        except Exception:
+            logger.warning("Cache indisponible : GlobalSettings lu en base.", exc_info=True)
+            return cls.load()
+        if values is not None:
+            obj = cls(**values)
+            obj._state.adding = False   # ligne existante : un save() éventuel fait un UPDATE
+            return obj
+        obj = cls.load()
+        try:
+            cache.set(key, {f.attname: getattr(obj, f.attname) for f in cls._meta.concrete_fields},
+                      GLOBAL_SETTINGS_CACHE_TTL)
+        except Exception:
+            logger.warning("Cache indisponible : GlobalSettings non mis en cache.", exc_info=True)
+        return obj
+
+
+GLOBAL_SETTINGS_CACHE_TTL = 60
+
+
+def _global_settings_cache_key() -> str:
+    fields = ",".join(sorted(f.attname for f in GlobalSettings._meta.concrete_fields))
+    return f"global_settings:{zlib.crc32(fields.encode()):08x}"
+
+
+def _invalidate_global_settings_cache() -> None:
+    from django.core.cache import cache
+    try:
+        cache.delete(_global_settings_cache_key())
+    except Exception:
+        logger.warning("Cache indisponible : invalidation de GlobalSettings impossible.", exc_info=True)

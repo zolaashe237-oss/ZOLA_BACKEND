@@ -24,6 +24,7 @@ class AuditAction(models.TextChoices):
     EXPORT_DATA = "EXPORT_DATA", "Export de données"
     SEND_REMINDER = "SEND_REMINDER", "Envoi relance"
     SEND_NOTIFICATION = "SEND_NOTIFICATION", "Envoi notification système"
+    UPDATE_SETTINGS = "UPDATE_SETTINGS", "Modification paramètres plateforme"
 
 
 class AuditLog(models.Model):
