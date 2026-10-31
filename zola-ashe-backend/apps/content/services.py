@@ -164,12 +164,12 @@ def generate_public_url(key: str) -> str:
 # ─── Accès à la formation (abonnement, RG-22 / RG-10) ───────────────────────
 
 def formation_accessible(user, formation: Formation, accessible_types=None) -> bool:
-    """Le membre détient-il un abonnement ouvrant cette formation ?
+    """Le membre a-t-il accès à cette formation ?
 
-    Visiteur non connecté : accessible seulement si `formation.is_public`.
-    Formation publique (`access_subscription_types` vide) → accessible à tout
-    membre non bloqué. Sinon, accès si le membre détient un abonnement actif de
-    l'UN des types requis. BLOQUÉ n'accède à rien (RG-10).
+    Visiteur non connecté : seulement si `formation.is_public`. BLOQUÉ : jamais (RG-10).
+    Sinon, dans l'ordre : formation publique ou achetée à l'unité → oui ; branche
+    Femme/Enfant non détenue → non ; `access_subscription_types` vide (« Membres »)
+    → oui ; sinon abonnement actif de l'UN des types requis.
     """
     if not getattr(user, "is_authenticated", False):
         return bool(formation.is_public)
@@ -178,16 +178,24 @@ def formation_accessible(user, formation: Formation, accessible_types=None) -> b
 
     if user.status == UserStatus.BLOQUE:
         return False
+    if formation.is_public:
+        return True
+    from apps.billing.services import has_purchased_formation, has_subscription_access
+    if has_purchased_formation(user, formation):
+        return True  # achat à l'unité
+    # Branches Femme / Enfant : complément payant, exigé en plus de l'abonnement.
+    # (Une formation vendue à l'unité est visible de tous : sans ce contrôle, un
+    # abonné sans la branche l'ouvrait gratuitement.)
+    branch = (formation.branch or "").upper()
+    if branch in ("FEMME", "ENFANT") and not (
+            user.status == UserStatus.ACTIF and branch in (user.access_levels or [])):
+        return False
     required = formation.access_subscription_types or []
     if not required:
-        return True  # formation publique
-    from apps.billing.services import has_purchased_formation, has_subscription_access
+        return True  # formation « Membres » : tout membre connecté
     if accessible_types is not None:
-        if any(t in accessible_types for t in required):
-            return True
-    elif any(has_subscription_access(user, t) for t in required):
-        return True
-    return has_purchased_formation(user, formation)  # achat à l'unité
+        return any(t in accessible_types for t in required)
+    return any(has_subscription_access(user, t) for t in required)
 
 
 # ─── Déblocage séquentiel & complétion (RG-16, RG-26, RG-28) ────────────────
@@ -195,12 +203,9 @@ def formation_accessible(user, formation: Formation, accessible_types=None) -> b
 # Complétion (remonte) :  un cours est terminé si son QCM est validé (ou absent) ;
 #                         un module est terminé si tous ses cours ET sous-modules
 #                         sont terminés.
-# Déblocage (descend) :   un module est ouvert si son parent est terminé et ses
-#                         frères précédents sont terminés ; un cours est ouvert si
-#                         son module est ouvert et les cours précédents terminés.
-# Prérequis inter-formation : la formation N est verrouillée tant que la formation
-#                              précédente (même branche, order < N) n'est pas complétée
-#                              et son quiz final n'a pas obtenu ≥ 14/20.
+# Accès libre : un membre qui a accès à une formation ouvre n'importe quel module,
+#               cours ou examen final, dans l'ordre qu'il veut. Aucun prérequis entre
+#               cours, modules ou formations : seul l'abonnement (ou l'achat) compte.
 
 # Seuil de passage du quiz final pour débloquer la formation suivante
 INTER_FORMATION_PASS_THRESHOLD = 14
@@ -259,75 +264,6 @@ def formation_all_courses_completed(user, formation: Formation) -> bool:
     return all(course_completed(user, c) for c in courses)
 
 
-def formation_completed(user, formation: Formation) -> bool:
-    """Formation terminée (pour le déblocage inter-formation) :
-    - Quiz final actif présent → score ≥ INTER_FORMATION_PASS_THRESHOLD requis.
-    - Pas de quiz final        → toutes les vidéos regardées (CourseCompletion) suffisent.
-    """
-    if not getattr(user, "is_authenticated", False):
-        return False
-
-    from .models import CourseCompletion
-
-    courses = list(Course.objects.filter(module__formation=formation))
-    if not courses:
-        return True
-
-    quiz_final = _final_exam(formation)
-    if quiz_final is not None:
-        return QuizResult.objects.filter(
-            user=user, quiz=quiz_final, score__gte=INTER_FORMATION_PASS_THRESHOLD
-        ).exists()
-
-    # Pas de quiz final → regarder toutes les vidéos débloque la formation suivante
-    completed_count = CourseCompletion.objects.filter(user=user, course__in=courses).count()
-    return completed_count >= len(courses)
-
-
-def formation_prerequisite_met(user, formation: Formation) -> bool:
-    """Prérequis inter-formation satisfait.
-
-    La formation N est débloquée si :
-    - l'utilisateur n'est pas authentifié (pour le catalogue public / preview)
-    - la formation est publique (is_public=True)
-    - c'est la première formation de la branche (ordre le plus bas)
-    - la formation précédente (même branche, triée par order puis id) est terminée
-      (tous les cours complétés et quiz final validé si présent).
-    """
-    if not getattr(user, "is_authenticated", False):
-        return True
-    if formation.is_public:
-        return True
-    # Formation achetée seule : pas de parcours imposé dans la branche.
-    from apps.billing.services import has_purchased_formation
-    if has_purchased_formation(user, formation):
-        return True
-
-    # Normalisation de la branche : MEMBRE, GENERALE et chaîne vide représentent le tronc commun
-    branch_val = (formation.branch or "MEMBRE").upper()
-    if branch_val in ("MEMBRE", "GENERALE", ""):
-        branch_filter = ["MEMBRE", "GENERALE", ""]
-    else:
-        branch_filter = [branch_val]
-
-    prev = (
-        Formation.objects.filter(
-            branch__in=branch_filter,
-            is_public=False,
-        )
-        .filter(
-            Q(order__lt=formation.order)
-            | Q(order=formation.order, pk__lt=formation.pk)
-        )
-        .order_by("-order", "-pk")
-        .first()
-    )
-    if prev is None:
-        return True  # Première formation de la branche -> toujours accessible
-
-    return formation_completed(user, prev)
-
-
 def module_completed(user, module: Module) -> bool:
     """Module terminé : tous ses cours et tous ses sous-modules sont terminés."""
     if not all(course_completed(user, c) for c in module.courses.all()):
@@ -335,64 +271,17 @@ def module_completed(user, module: Module) -> bool:
     return all(module_completed(user, child) for child in module.children.all())
 
 
-def _previous_sibling_modules(module: Module):
-    return Module.objects.filter(
-        formation_id=module.formation_id, parent_id=module.parent_id, order__lt=module.order)
-
-
-def module_unlocked(user, module: Module) -> bool:
-    """Module ouvert si :
-      - son parent (le cas échéant) est lui-même ouvert ET ses cours DIRECTS sont
-        terminés (on entre dans un sous-module après les leçons du module parent —
-        sans exiger l'achèvement des autres sous-modules, ce qui créerait un
-        interblocage), ET
-      - tous les modules frères précédents sont entièrement terminés (RG-16).
-    """
-    if module.parent_id is not None:
-        parent = module.parent
-        if not module_unlocked(user, parent):
-            return False
-        if not all(course_completed(user, c) for c in parent.courses.all()):
-            return False
-    return all(module_completed(user, prev) for prev in _previous_sibling_modules(module))
-
-
-def _previous_courses(course: Course):
-    return Course.objects.filter(module_id=course.module_id, order__lt=course.order)
-
-
-def course_unlocked(user, course: Course) -> bool:
-    """Cours ouvert si son module est ouvert et les cours précédents sont terminés."""
-    if not module_unlocked(user, course.module):
-        return False
-    return all(course_completed(user, prev) for prev in _previous_courses(course))
-
-
-def final_exam_unlocked(user, formation: Formation) -> bool:
-    """Examen final ouvert quand tous les cours de la formation sont terminés."""
-    courses = Course.objects.filter(module__formation=formation)
-    return all(course_completed(user, c) for c in courses)
-
-
 def course_state(user, course: Course, accessible: bool) -> dict:
-    """État d'un cours pour un membre : verrouillage (abonnement/prérequis/quiz) + achèvement."""
+    """État d'un cours pour un membre : verrouillé seulement sans accès à la formation."""
     if not accessible:
         return {"locked": True, "lock_reason": "subscription", "completed": False}
-    if not formation_prerequisite_met(user, course.module.formation):
-        return {"locked": True, "lock_reason": "formation_prerequisite", "completed": False}
-    if not course_unlocked(user, course):
-        return {"locked": True, "lock_reason": "quiz", "completed": False}
     return {"locked": False, "lock_reason": None, "completed": course_completed(user, course)}
 
 
 def module_state(user, module: Module, accessible: bool) -> dict:
-    """État d'un module : verrouillage (abonnement/prérequis/quiz) + achèvement."""
+    """État d'un module : verrouillé seulement sans accès à la formation."""
     if not accessible:
         return {"locked": True, "lock_reason": "subscription", "completed": False}
-    if not formation_prerequisite_met(user, module.formation):
-        return {"locked": True, "lock_reason": "formation_prerequisite", "completed": False}
-    if not module_unlocked(user, module):
-        return {"locked": True, "lock_reason": "quiz", "completed": False}
     return {"locked": False, "lock_reason": None, "completed": module_completed(user, module)}
 
 

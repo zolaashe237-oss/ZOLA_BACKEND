@@ -36,11 +36,7 @@ from .serializers import (
 )
 from .services import (
     _course_quiz,
-    course_completed,
-    course_unlocked,
-    final_exam_unlocked,
     formation_accessible,
-    formation_prerequisite_met,
     generate_signed_url,
     grade_quiz,
     record_quiz_result,
@@ -93,16 +89,10 @@ def _accessible_sub_types(user) -> set[str]:
 
 
 def _quiz_access(user, quiz: Quiz) -> dict:
-    """État d'accès d'un QCM : {locked, lock_reason} selon abonnement + prérequis + progression."""
+    """État d'accès d'un QCM : ouvert dès que le membre a accès à la formation."""
     formation = quiz.formation if quiz.is_final else quiz.course.module.formation
     if not formation_accessible(user, formation):
         return {"locked": True, "lock_reason": "subscription"}
-    if not formation_prerequisite_met(user, formation):
-        return {"locked": True, "lock_reason": "formation_prerequisite"}
-    unlocked = (final_exam_unlocked(user, formation) if quiz.is_final
-                else course_unlocked(user, quiz.course))
-    if not unlocked:
-        return {"locked": True, "lock_reason": "quiz"}
     return {"locked": False, "lock_reason": None}
 
 
@@ -206,10 +196,10 @@ class ResourceViewSet(viewsets.ReadOnlyModelViewSet):
         tags=["Catalogue"], summary="Lire une ressource",
         description="Renvoie le moyen de lecture d'une ressource **déverrouillée** : `kind=youtube` "
                     "avec le lien, ou `kind=file` avec une URL signée valable 1h. 403 si la formation "
-                    "est réservée (non accessible) ou si le cours n'est pas encore débloqué.",
+                    "est réservée (non accessible).",
         responses={200: OpenApiResponse(_StreamResponse, description="Lien de lecture."),
                    400: OpenApiResponse(description="Aucun média rattaché."),
-                   403: OpenApiResponse(description="Formation réservée ou cours verrouillé.")},
+                   403: OpenApiResponse(description="Formation réservée.")},
     )
     @action(detail=True, methods=["get"], url_path="stream")
     def stream(self, request, pk=None):
@@ -220,34 +210,8 @@ class ResourceViewSet(viewsets.ReadOnlyModelViewSet):
         if not formation_accessible(request.user, formation):
             return Response({"detail": "Formation réservée.", "lock_reason": "subscription"},
                             status=status.HTTP_403_FORBIDDEN)
-        if not formation_prerequisite_met(request.user, formation):
-            return Response({"detail": "Terminez la formation précédente pour accéder à celle-ci.",
-                             "lock_reason": "formation_prerequisite"},
-                            status=status.HTTP_403_FORBIDDEN)
-        if not course_unlocked(request.user, course):
-            return Response({"detail": "Cours verrouillé.", "lock_reason": "quiz"},
-                            status=status.HTTP_403_FORBIDDEN)
 
-        # Strict sequential checking
-        # unlocked_progress = highest order of completed courses in the same module + 1
-        module_courses = list(course.module.courses.order_by("order"))
-        completed_orders = [c.order for c in module_courses if course_completed(request.user, c)]
-        if not completed_orders:
-            # If no course completed, unlocked progress is the order of the first course in the module
-            unlocked_progress = module_courses[0].order if module_courses else 0
-        else:
-            # The next available course order after the highest completed one
-            highest_completed = max(completed_orders)
-            pending = [c.order for c in module_courses if c.order > highest_completed]
-            unlocked_progress = pending[0] if pending else highest_completed
-
-        if course.order > unlocked_progress:
-            return Response({"detail": "Ordre de cours non autorisé.", "lock_reason": "sequential"},
-                            status=status.HTTP_403_FORBIDDEN)
-
-        # L'ouverture d'une vidéo enregistre toujours la complétion du cours.
-        # Pour les cours avec quiz, cela permet le déblocage inter-formation
-        # (regarder toutes les vidéos suffit quand il n'y a pas de quiz final).
+        # L'ouverture d'une vidéo enregistre la complétion du cours (suivi de progression).
         from .models import CourseCompletion
         CourseCompletion.objects.get_or_create(user=request.user, course=course)
 
@@ -272,12 +236,6 @@ class CourseViewSet(viewsets.ReadOnlyModelViewSet):
         formation = course.module.formation
         if not formation_accessible(request.user, formation):
             return Response({"detail": "Formation réservée.", "lock_reason": "subscription"},
-                            status=status.HTTP_403_FORBIDDEN)
-        if not formation_prerequisite_met(request.user, formation):
-            return Response({"detail": "Prérequis de formation non satisfait.", "lock_reason": "formation_prerequisite"},
-                            status=status.HTTP_403_FORBIDDEN)
-        if not course_unlocked(request.user, course):
-            return Response({"detail": "Cours verrouillé.", "lock_reason": "quiz"},
                             status=status.HTTP_403_FORBIDDEN)
 
         CourseCompletion.objects.get_or_create(user=request.user, course=course)

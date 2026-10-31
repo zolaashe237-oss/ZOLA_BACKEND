@@ -109,7 +109,10 @@ class FormationAccessTests(APITestCase):
 
 
 @override_settings(**TEST_SETTINGS)
-class SequentialUnlockTests(APITestCase):
+class FreeAccessTests(APITestCase):
+    """Un membre qui a accès à une formation ouvre tout, dans l'ordre qu'il veut :
+    aucun prérequis entre cours, modules ou formations."""
+
     def setUp(self):
         self.user = User.objects.create_user("u@z.com", "Passw0rd!", full_name="U",
                                               email_verified=True, status=UserStatus.ACTIF)
@@ -120,62 +123,49 @@ class SequentialUnlockTests(APITestCase):
         self.quiz1 = add_quiz(course=self.c1)
         self.client.force_authenticate(self.user)
 
+    def _detail(self, formation=None):
+        return self.client.get(f"/api/formations/{(formation or self.formation).id}/").data
+
     def _course(self, course_id):
-        data = self.client.get(f"/api/formations/{self.formation.id}/").data
-        courses = {c["id"]: c for m in data["modules"] for c in m["courses"]}
+        courses = {c["id"]: c for m in self._detail()["modules"] for c in m["courses"]}
         return courses[course_id]
 
-    def test_second_course_locked_until_first_validated(self):
-        self.assertTrue(self._course(self.c2.id)["access"]["locked"])
-        self.assertEqual(self._course(self.c2.id)["access"]["lock_reason"], "quiz")
-
-    def test_quiz_validation_unlocks_next_course(self):
-        r = self.client.post(f"/api/quizzes/{self.quiz1.id}/submit/",
-                             {"answers": good_answers(self.quiz1)}, format="json")
-        self.assertEqual(r.status_code, 200)
-        self.assertTrue(r.data["validated"])
+    def test_any_course_open_without_previous_one(self):
+        # C1 a un quiz non validé : C2 reste ouvert.
         self.assertFalse(self._course(self.c2.id)["access"]["locked"])
+        self.assertEqual(self.client.post(f"/api/courses/{self.c2.id}/complete/").status_code, 200)
 
-    def test_child_module_requires_parent_completed(self):
+    def test_any_module_open_without_previous_one(self):
+        m2 = Module.objects.create(formation=self.formation, title="M2", order=2)
+        Course.objects.create(module=m2, title="C3", order=1)
         child = Module.objects.create(formation=self.formation, parent=self.module, title="M1.1", order=1)
         Course.objects.create(module=child, title="C-child", order=1)
-        # c2 (sans quiz) reste, le module parent n'est pas terminé tant que quiz1 non validé
-        data = self.client.get(f"/api/formations/{self.formation.id}/").data
-        parent = next(m for m in data["modules"] if m["id"] == self.module.id)
-        self.assertTrue(parent["children"][0]["access"]["locked"])
-        # valide le quiz du cours 1 ; c2 n'a pas de quiz → module parent terminé
-        self.client.post(f"/api/quizzes/{self.quiz1.id}/submit/",
-                        {"answers": good_answers(self.quiz1)}, format="json")
-        data = self.client.get(f"/api/formations/{self.formation.id}/").data
-        parent = next(m for m in data["modules"] if m["id"] == self.module.id)
-        self.assertFalse(parent["children"][0]["access"]["locked"])
+        data = self._detail()
+        modules = {m["id"]: m for m in data["modules"]}
+        self.assertFalse(modules[m2.id]["access"]["locked"])
+        self.assertFalse(modules[self.module.id]["children"][0]["access"]["locked"])
 
-    def test_inter_formation_sequential_unlock(self):
+    def test_next_formation_open_without_finishing_previous(self):
         f2 = make_formation(title="Formation 2", order=2, branch="MEMBRE")
-        m2 = Module.objects.create(formation=f2, title="M2", order=1)
-        Course.objects.create(module=m2, title="C2-1", order=1)
+        Module.objects.create(formation=f2, title="M2", order=1)
+        data = self._detail(f2)
+        self.assertFalse(data["locked"])
+        self.assertIsNone(data["lock_reason"])
 
-        # F1 a des cours non terminés -> F2 est verrouillée pour ce membre
-        res = self.client.get(f"/api/formations/{f2.id}/")
-        self.assertEqual(res.status_code, 200)
-        self.assertTrue(res.data["locked"])
-        self.assertEqual(res.data["lock_reason"], "formation_prerequisite")
+    def test_quiz_and_final_exam_open_at_any_time(self):
+        q2 = add_quiz(course=self.c2)
+        self.assertEqual(self.client.get(f"/api/quizzes/{q2.id}/").status_code, 200)
+        exam = add_quiz(formation=self.formation)
+        self.assertFalse(self._detail()["final_exam"]["locked"])
+        self.assertEqual(self.client.get(f"/api/quizzes/{exam.id}/").status_code, 200)
 
-        # Valider le quiz seul ne suffit pas : sans quiz final, F1 est terminée
-        # quand toutes ses vidéos sont regardées (CourseCompletion).
-        self.client.post(f"/api/quizzes/{self.quiz1.id}/submit/",
-                         {"answers": good_answers(self.quiz1)}, format="json")
-        self.assertTrue(self.client.get(f"/api/formations/{f2.id}/").data["locked"])
-
-        # F1 : tous les cours complétés -> F2 se débloque immédiatement
-        for course in (self.c1, self.c2):
-            r = self.client.post(f"/api/courses/{course.id}/complete/")
-            self.assertEqual(r.status_code, 200)
-        res2 = self.client.get(f"/api/formations/{f2.id}/")
-        self.assertEqual(res2.status_code, 200)
-        self.assertFalse(res2.data["locked"])
-        self.assertIsNone(res2.data["lock_reason"])
-
+    def test_still_locked_without_subscription(self):
+        restreint = User.objects.create_user("r@z.com", "Passw0rd!", full_name="R",
+                                             email_verified=True, status=UserStatus.RESTREINT)
+        self.client.force_authenticate(restreint)
+        r = self.client.get(f"/api/quizzes/{self.quiz1.id}/")
+        self.assertEqual(r.status_code, 403)
+        self.assertEqual(r.data["lock_reason"], "subscription")
 
 
 @override_settings(**TEST_SETTINGS)
@@ -215,12 +205,10 @@ class QuizGradingTests(APITestCase):
         self.assertEqual(r.status_code, 200)
         self.assertNotIn("is_correct", r.data["questions"][0]["choices"][0])
 
-    def test_locked_quiz_forbidden(self):
+    def test_quiz_of_later_course_open_without_previous_quiz(self):
         c2 = Course.objects.create(module=self.module, title="C2", order=2)
         q2 = add_quiz(course=c2)
-        r = self.client.get(f"/api/quizzes/{q2.id}/")  # c2 verrouillé (c1 non validé)
-        self.assertEqual(r.status_code, 403)
-        self.assertEqual(r.data["lock_reason"], "quiz")
+        self.assertEqual(self.client.get(f"/api/quizzes/{q2.id}/").status_code, 200)
 
 
 @override_settings(**TEST_SETTINGS)

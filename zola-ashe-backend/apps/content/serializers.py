@@ -13,9 +13,7 @@ from .services import (
     _course_quiz,
     _final_exam,
     course_state,
-    final_exam_unlocked,
     formation_accessible,
-    formation_prerequisite_met,
     generate_public_url,
     generate_signed_url,
     module_state,
@@ -144,8 +142,6 @@ class FormationListSerializer(serializers.ModelSerializer):
         types = self.context.get("accessible_sub_types")
         if not formation_accessible(user, obj, accessible_types=types):
             return "subscription"
-        if not formation_prerequisite_met(user, obj):
-            return "formation_prerequisite"
         return None
 
     def get_locked(self, obj) -> bool:
@@ -185,8 +181,6 @@ class FormationDetailSerializer(serializers.ModelSerializer):
         user = self.context["request"].user
         if not self._accessible(obj):
             return "subscription"
-        if not formation_prerequisite_met(user, obj):
-            return "formation_prerequisite"
         return None
 
     def get_cover(self, obj) -> str:
@@ -212,7 +206,7 @@ class FormationDetailSerializer(serializers.ModelSerializer):
             return None
         user = self.context["request"].user
         accessible = self._accessible(obj)
-        unlocked = accessible and final_exam_unlocked(user, obj)
+        unlocked = accessible
         result = QuizResult.objects.filter(user=user, quiz=exam).first()
         return {
             "id": exam.id,
