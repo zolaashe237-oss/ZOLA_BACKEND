@@ -31,10 +31,12 @@ class SubscriptionSerializer(serializers.ModelSerializer):
 
 
 class PaymentSerializer(serializers.ModelSerializer):
+    formation_title = serializers.CharField(source="formation.title", read_only=True, default=None)
+
     class Meta:
         model = Payment
         fields = ("id", "type", "status", "amount", "swinmo_ref", "reason",
-                  "subscription", "paid_at")
+                  "subscription", "formation", "formation_title", "paid_at")
         read_only_fields = fields
 
 

@@ -2,6 +2,7 @@
 import csv
 from datetime import timedelta
 
+from django.db import transaction
 from django.db.models import DateTimeField, OuterRef, Q, Subquery, Sum
 from django.http import HttpResponse, StreamingHttpResponse
 from django.utils import timezone
@@ -141,15 +142,26 @@ class ManualPaymentView(APIView):
         if user is None:
             return Response({"detail": "Membre introuvable."}, status=status.HTTP_404_NOT_FOUND)
 
-        plan = resolve_plan(data["kind"])
-        amount = data.get("amount") if data.get("amount") is not None else plan.amount
+        formation = data.get("formation")
+        if formation is not None:
+            from apps.billing.models import FormationPurchase
+            if FormationPurchase.objects.filter(user=user, formation=formation).exists():
+                return Response({"detail": "Ce membre a déjà acheté cette formation."},
+                                status=status.HTTP_400_BAD_REQUEST)
+            payment_type, amount = PaymentType.FORMATION, data["amount"]
+        else:
+            plan = resolve_plan(data["kind"])
+            payment_type = plan.payment_type
+            amount = data.get("amount") if data.get("amount") is not None else plan.amount
         # swinmo_ref = NULL (RG-06) ; on réutilise la logique d'activation métier.
         payment = Payment.objects.create(
-            user=user, type=plan.payment_type, status=PaymentStatus.EN_ATTENTE,
-            amount=amount, swinmo_ref=None, reason=data["reason"])
+            user=user, type=payment_type, status=PaymentStatus.EN_ATTENTE,
+            amount=amount, swinmo_ref=None, reason=data["reason"], formation=formation)
         activate_paid_payment(payment, data["kind"])
         record(request.user, AuditAction.MANUAL_PAYMENT, target_type="Payment", target_id=payment.id,
-               reason=data["reason"], payload={"kind": data["kind"], "amount": amount})
+               reason=data["reason"],
+               payload={"kind": data["kind"], "amount": amount,
+                        "formation_id": formation.id if formation else None})
         return Response({"payment_id": payment.id, "status": payment.status},
                         status=status.HTTP_201_CREATED)
 
@@ -168,12 +180,38 @@ class RefundView(APIView):
         user = User.objects.filter(id=data["user_id"]).first()
         if user is None:
             return Response({"detail": "Membre introuvable."}, status=status.HTTP_404_NOT_FOUND)
-        payment = Payment.objects.create(
-            user=user, type=PaymentType.REMBOURSEMENT, status=PaymentStatus.VALIDE,
-            amount=-abs(data["amount"]), swinmo_ref=None, reason=data["reason"])
+        original = None
+        if data.get("payment_id"):
+            original = Payment.objects.filter(
+                pk=data["payment_id"], user=user, status=PaymentStatus.VALIDE).first()
+            if original is None or original.type == PaymentType.REMBOURSEMENT:
+                return Response({"detail": "Paiement à rembourser introuvable pour ce membre."},
+                                status=status.HTTP_400_BAD_REQUEST)
+
+        formation = original.formation if original and original.type == PaymentType.FORMATION else None
+        revoke = data.get("revoke_access")
+        if revoke is None:
+            revoke = bool(original) and abs(data["amount"]) >= original.amount
+
+        access_revoked = False
+        with transaction.atomic():
+            payment = Payment.objects.create(
+                user=user, type=PaymentType.REMBOURSEMENT, status=PaymentStatus.VALIDE,
+                amount=-abs(data["amount"]), swinmo_ref=None, reason=data["reason"],
+                formation=formation)
+            # Achat de formation remboursé : l'accès à la formation est retiré.
+            if formation is not None and revoke:
+                from apps.billing.models import FormationPurchase
+                access_revoked = FormationPurchase.objects.filter(
+                    user=user, formation=formation).delete()[0] > 0
         record(request.user, AuditAction.MANUAL_PAYMENT, target_type="Payment", target_id=payment.id,
-               reason=data["reason"], payload={"refund": True, "amount": -abs(data["amount"])})
-        return Response({"payment_id": payment.id}, status=status.HTTP_201_CREATED)
+               reason=data["reason"],
+               payload={"refund": True, "amount": -abs(data["amount"]),
+                        "refunded_payment_id": original.id if original else None,
+                        "formation_id": formation.id if formation else None,
+                        "access_revoked": access_revoked})
+        return Response({"payment_id": payment.id, "access_revoked": access_revoked},
+                        status=status.HTTP_201_CREATED)
 
 
 @extend_schema(tags=[_TAG], summary="Exonérer de cotisation",

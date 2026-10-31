@@ -68,17 +68,43 @@ class FormationPurchaseTests(APITestCase):
                                {"kind": "FORMATION", "formation_id": self.formation.id}, format="json")
         self.assertEqual(res.status_code, 400)
 
-    def test_admin_price_cleared_on_non_paid_formation(self):
+    def test_price_on_existing_members_formation_makes_it_paid(self):
+        """Formation existante en accès « Membres » : lui donner un prix la rend payante."""
+        admin = User.objects.create_user("a@test.io", "pwd", full_name="A", role=Role.ADMIN,
+                                         status=UserStatus.ACTIF)
+        members_only = Formation.objects.create(title="Existante", slug="existante",
+                                                status=FormationStatus.PUBLISHED)  # importée, accès []
+        self.client.force_authenticate(admin)
+        res = self.client.patch(f"/api/admin/formations/{members_only.id}/", {"price": 8000}, format="json")
+        self.assertEqual(res.status_code, 200, res.content)
+        self.assertEqual((res.json()["price"], res.json()["access_subscription_types"]), (8000, ["MEMBRE"]))
+        # Le non-abonné la voit, verrouillée, et peut l'acheter.
+        self.client.force_authenticate(User.objects.get(pk=self.user.pk))
+        data = self._detail(members_only).json()
+        self.assertEqual((data["locked"], data["price"]), (True, 8000))
+
+    def test_admin_price_cleared_on_public_formation(self):
         admin = User.objects.create_user("a@test.io", "pwd", full_name="A", role=Role.ADMIN,
                                          status=UserStatus.ACTIF)
         self.client.force_authenticate(admin)
         res = self.client.patch(f"/api/admin/formations/{self.formation.id}/",
-                                {"access_subscription_types": [], "price": 5000}, format="json")
-        self.assertEqual(res.status_code, 200, res.content)
+                                {"is_public": True, "access_subscription_types": [], "price": 5000},
+                                format="json")
         self.assertIsNone(res.json()["price"])
-        res = self.client.patch(f"/api/admin/formations/{self.not_for_sale.id}/",
-                                {"price": 8000}, format="json")
-        self.assertEqual(res.json()["price"], 8000)
+
+    def test_priced_branch_formation_not_free_for_subscriber_without_branch(self):
+        femme = Formation.objects.create(title="Femme", slug="femme", branch="FEMME", price=9000,
+                                         access_subscription_types=["MEMBRE"],
+                                         status=FormationStatus.PUBLISHED)
+        abonne = User.objects.create_user("ab@test.io", "pwd", full_name="Ab",
+                                          status=UserStatus.ACTIF, access_levels=["MEMBRE"])
+        self.client.force_authenticate(abonne)
+        data = self._detail(femme).json()
+        self.assertEqual((data["locked"], data["lock_reason"]), (True, "subscription"))
+        abonne.access_levels = ["MEMBRE", "FEMME"]
+        abonne.save(update_fields=["access_levels"])
+        self.client.force_authenticate(User.objects.get(pk=abonne.pk))
+        self.assertFalse(self._detail(femme).json()["locked"])
 
     def test_payment_status_by_ref_then_by_id(self):
         res = self.client.post("/api/billing/payments/initiate/",
@@ -95,3 +121,106 @@ class FormationPurchaseTests(APITestCase):
         other = User.objects.create_user("autre@test.io", "pwd", full_name="Autre")
         self.client.force_authenticate(other)
         self.assertEqual(self.client.get("/api/billing/payments/status/", {"payment_id": pid}).status_code, 404)
+
+    def _admin_client(self):
+        admin = User.objects.create_user("adm@test.io", "pwd", full_name="Adm", role=Role.ADMIN,
+                                         status=UserStatus.ACTIF)
+        self.client.force_authenticate(admin)
+
+    def test_admin_validates_whatsapp_formation_purchase(self):
+        self._admin_client()
+        res = self.client.post("/api/admin/payments/manual/", {
+            "user_id": self.user.id, "kind": "FORMATION", "formation_id": self.formation.id,
+            "reason": "Paiement WhatsApp"}, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        payment = Payment.objects.get(pk=res.json()["payment_id"])
+        self.assertEqual((payment.type, payment.status, payment.amount, payment.formation_id),
+                         (PaymentType.FORMATION, PaymentStatus.VALIDE, 15000, self.formation.id))
+        self.assertTrue(FormationPurchase.objects.filter(user=self.user, formation=self.formation).exists())
+
+        # Le membre voit la formation déverrouillée.
+        self.client.force_authenticate(User.objects.get(pk=self.user.pk))
+        self.assertFalse(self._detail(self.formation).json()["locked"])
+
+        # Une seconde validation est refusée (pas de double encaissement).
+        self._admin_client_again()
+        res = self.client.post("/api/admin/payments/manual/", {
+            "user_id": self.user.id, "kind": "FORMATION", "formation_id": self.formation.id,
+            "reason": "Doublon"}, format="json")
+        self.assertEqual(res.status_code, 400)
+
+    def _admin_client_again(self):
+        self.client.force_authenticate(User.objects.get(email="adm@test.io"))
+
+    def test_admin_manual_formation_without_price_requires_amount(self):
+        self._admin_client()
+        payload = {"user_id": self.user.id, "kind": "FORMATION",
+                   "formation_id": self.not_for_sale.id, "reason": "WhatsApp"}
+        self.assertEqual(self.client.post("/api/admin/payments/manual/", payload, format="json").status_code, 400)
+        res = self.client.post("/api/admin/payments/manual/", {**payload, "amount": 9000}, format="json")
+        self.assertEqual(res.status_code, 201)
+
+    def test_admin_manual_branch_access(self):
+        self._admin_client()
+        res = self.client.post("/api/admin/payments/manual/", {
+            "user_id": self.user.id, "kind": "BRANCHE_FEMME", "reason": "WhatsApp"}, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        self.user.refresh_from_db()
+        self.assertIn("FEMME", self.user.access_levels)
+
+    def _bought_manually(self):
+        self._admin_client()
+        res = self.client.post("/api/admin/payments/manual/", {
+            "user_id": self.user.id, "kind": "FORMATION", "formation_id": self.formation.id,
+            "reason": "WhatsApp"}, format="json")
+        return res.json()["payment_id"]
+
+    def test_full_refund_revokes_formation_access(self):
+        pid = self._bought_manually()
+        res = self.client.post("/api/admin/payments/refund/", {
+            "user_id": self.user.id, "amount": 15000, "payment_id": pid,
+            "reason": "Remboursement"}, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertTrue(res.json()["access_revoked"])
+        self.assertFalse(FormationPurchase.objects.filter(user=self.user, formation=self.formation).exists())
+        refund = Payment.objects.get(pk=res.json()["payment_id"])
+        self.assertEqual((refund.amount, refund.formation_id), (-15000, self.formation.id))
+        # Côté membre : formation de nouveau verrouillée, et rachetable.
+        self.client.force_authenticate(User.objects.get(pk=self.user.pk))
+        self.assertTrue(self._detail(self.formation).json()["locked"])
+
+    def test_partial_refund_keeps_access_unless_requested(self):
+        pid = self._bought_manually()
+        res = self.client.post("/api/admin/payments/refund/", {
+            "user_id": self.user.id, "amount": 5000, "payment_id": pid,
+            "reason": "Geste commercial"}, format="json")
+        self.assertFalse(res.json()["access_revoked"])
+        self.assertTrue(FormationPurchase.objects.filter(user=self.user, formation=self.formation).exists())
+        res = self.client.post("/api/admin/payments/refund/", {
+            "user_id": self.user.id, "amount": 5000, "payment_id": pid, "revoke_access": True,
+            "reason": "Retrait"}, format="json")
+        self.assertTrue(res.json()["access_revoked"])
+
+    def test_refund_rejects_other_members_payment(self):
+        pid = self._bought_manually()
+        other = User.objects.create_user("o@test.io", "pwd", full_name="O")
+        res = self.client.post("/api/admin/payments/refund/", {
+            "user_id": other.id, "amount": 15000, "payment_id": pid, "reason": "x"}, format="json")
+        self.assertEqual(res.status_code, 400)
+
+    def test_member_detail_lists_formation_purchases(self):
+        pid = self._bought_manually()
+        data = self.client.get(f"/api/admin/members/{self.user.id}/").json()
+        self.assertEqual(data["formation_purchases"], [{
+            "formation_id": self.formation.id, "formation_title": "Reiki",
+            "purchased_at": data["formation_purchases"][0]["purchased_at"],
+            "payment_id": pid, "amount": 15000, "manual": True,
+        }])
+
+    def test_admin_sets_price_at_creation(self):
+        self._admin_client()
+        res = self.client.post("/api/admin/formations/", {
+            "title": "Nouvelle", "category": "FORMATION", "access_subscription_types": ["MEMBRE"],
+            "is_public": False, "price": 12000, "status": "DRAFT"}, format="json")
+        self.assertEqual(res.status_code, 201, res.content)
+        self.assertEqual(res.json()["price"], 12000)

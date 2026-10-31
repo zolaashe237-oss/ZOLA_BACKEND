@@ -37,6 +37,7 @@ class MemberDetailSerializer(serializers.ModelSerializer):
     payments = serializers.SerializerMethodField()
     quiz_results = serializers.SerializerMethodField()
     formations_progress = serializers.SerializerMethodField()
+    formation_purchases = serializers.SerializerMethodField()
     password = serializers.CharField(write_only=True, required=False)
 
     class Meta:
@@ -44,7 +45,8 @@ class MemberDetailSerializer(serializers.ModelSerializer):
         fields = ("id", "email", "full_name", "photo", "role", "status",
                   "status_changed_at", "email_verified", "nb_warnings",
                   "created_at", "last_login", "subscriptions", "payments", "quiz_results",
-                  "formations_progress", "phone", "country", "access_levels", "password")
+                  "formations_progress", "formation_purchases", "phone", "country",
+                  "access_levels", "password")
         read_only_fields = ("id", "status_changed_at", "created_at", "last_login", "nb_warnings")
 
     @extend_schema_field(OpenApiTypes.OBJECT)
@@ -54,6 +56,20 @@ class MemberDetailSerializer(serializers.ModelSerializer):
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_payments(self, obj):
         return PaymentSerializer(obj.payments.order_by("-paid_at"), many=True).data
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_formation_purchases(self, obj):
+        """Formations achetées à l'unité (accès actif), avec le paiement qui les a ouvertes."""
+        purchases = obj.formation_purchases.select_related("formation", "payment").order_by("-created_at")
+        return [{
+            "formation_id": p.formation_id,
+            "formation_title": p.formation.title,
+            "purchased_at": p.created_at,
+            "payment_id": p.payment_id,
+            "amount": p.payment.amount if p.payment else None,
+            # Pas de référence Swinmo → validé à la main par un admin (WhatsApp, espèces…).
+            "manual": bool(p.payment and not p.payment.swinmo_ref),
+        } for p in purchases]
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_quiz_results(self, obj):
@@ -125,15 +141,37 @@ class ReasonSerializer(serializers.Serializer):
 
 class ManualPaymentSerializer(serializers.Serializer):
     user_id = serializers.IntegerField()
-    kind = serializers.ChoiceField(choices=["INSCRIPTION", "COTISATION", "ANNUEL", "DON"])
+    kind = serializers.ChoiceField(choices=["INSCRIPTION", "COTISATION", "ANNUEL", "DON",
+                                            "BRANCHE_FEMME", "BRANCHE_ENFANT", "FORMATION"])
     amount = serializers.IntegerField(required=False, min_value=0)
     reason = serializers.CharField(max_length=255)
+    # Achat d'une formation réglé hors ligne (ex. WhatsApp) : formation à débloquer.
+    formation_id = serializers.IntegerField(required=False)
+
+    def validate(self, attrs):
+        if attrs["kind"] != "FORMATION":
+            return attrs
+        from apps.content.models import Formation
+        formation = Formation.objects.filter(pk=attrs.get("formation_id")).first()
+        if formation is None:
+            raise serializers.ValidationError({"formation_id": "Formation à débloquer requise."})
+        if attrs.get("amount") is None:
+            if not formation.price:
+                raise serializers.ValidationError(
+                    {"amount": "Cette formation n'a pas de prix : indiquez le montant encaissé."})
+            attrs["amount"] = formation.price
+        attrs["formation"] = formation
+        return attrs
 
 
 class RefundSerializer(serializers.Serializer):
     user_id = serializers.IntegerField()
     amount = serializers.IntegerField(min_value=1)  # montant positif → stocké négatif
     reason = serializers.CharField(max_length=255)
+    # Paiement remboursé : pour un achat de formation, permet de retirer l'accès.
+    payment_id = serializers.IntegerField(required=False)
+    # Par défaut : accès retiré si le remboursement couvre tout le montant payé.
+    revoke_access = serializers.BooleanField(required=False, allow_null=True, default=None)
 
 
 class ExonerationSerializer(serializers.Serializer):
@@ -201,15 +239,18 @@ class AdminFormationSerializer(serializers.ModelSerializer):
         if status_value == FormationStatus.SCHEDULED and not publish_at:
             raise serializers.ValidationError(
                 {"publish_at": "Une date de publication est requise pour une formation programmée."})
-        # Le prix à l'unité n'a de sens que pour une formation payante : sinon elle est
-        # déjà accessible sans achat, et le prix est effacé.
+        # Prix à l'unité : une formation publique est déjà libre, son prix est effacé.
+        # Mettre un prix sur une formation « Membres » (accès libre aux connectés) la
+        # rend payante — sinon un non-abonné pourrait l'ouvrir sans l'acheter.
         types = attrs.get("access_subscription_types",
                           getattr(self.instance, "access_subscription_types", []))
         is_public = attrs.get("is_public", getattr(self.instance, "is_public", False))
-        if not types or is_public:
-            attrs["price"] = None
-        elif attrs.get("price") == 0:
-            attrs["price"] = None
+        price = attrs.get("price", getattr(self.instance, "price", None))
+        if is_public or not price:
+            if "price" in attrs or is_public:
+                attrs["price"] = None
+        elif not types:
+            attrs["access_subscription_types"] = ["MEMBRE"]
         return attrs
 
 
