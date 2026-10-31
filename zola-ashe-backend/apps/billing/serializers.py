@@ -4,7 +4,7 @@ from rest_framework import serializers
 from .models import Payment, Subscription
 
 PURCHASE_KINDS = ("INSCRIPTION", "COTISATION", "ANNUEL", "DON",
-                   "BRANCHE_FEMME", "BRANCHE_ENFANT")
+                   "BRANCHE_FEMME", "BRANCHE_ENFANT", "FORMATION")
 
 
 class SubscriptionSerializer(serializers.ModelSerializer):
@@ -41,12 +41,33 @@ class PaymentSerializer(serializers.ModelSerializer):
 class InitiatePaymentSerializer(serializers.Serializer):
     kind = serializers.ChoiceField(choices=PURCHASE_KINDS)
     amount = serializers.IntegerField(required=False, min_value=1)  # don : montant libre
+    formation_id = serializers.IntegerField(required=False)          # achat d'une formation
 
     def validate(self, attrs):
         from django.conf import settings
+        from apps.accounts.features import monthly_subscription_enabled
+        if attrs["kind"] == "COTISATION" and not monthly_subscription_enabled():
+            raise serializers.ValidationError(
+                {"kind": "La cotisation mensuelle est désactivée : aucun paiement mensuel n'est requis."})
+        if attrs["kind"] == "FORMATION":
+            attrs["formation"] = self._purchasable_formation(attrs.get("formation_id"))
         if attrs["kind"] == "DON":
             amount = attrs.get("amount")
             if not amount or amount < settings.DON_MIN_AMOUNT:
                 raise serializers.ValidationError(
                     {"amount": f"Un don doit être d'au moins {settings.DON_MIN_AMOUNT} FCFA."})
         return attrs
+
+    def _purchasable_formation(self, formation_id):
+        from apps.content.services import formation_accessible, visible_formations_qs
+        if not formation_id:
+            raise serializers.ValidationError({"formation_id": "Formation requise."})
+        formation = visible_formations_qs().filter(pk=formation_id).first()
+        if formation is None:
+            raise serializers.ValidationError({"formation_id": "Formation introuvable."})
+        if not formation.price:
+            raise serializers.ValidationError(
+                {"formation_id": "Cette formation n'est pas proposée à l'achat."})
+        if formation_accessible(self.context["request"].user, formation):
+            raise serializers.ValidationError({"formation_id": "Vous avez déjà accès à cette formation."})
+        return formation

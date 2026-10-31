@@ -167,7 +167,7 @@ class AdminFormationSerializer(serializers.ModelSerializer):
     class Meta:
         model = Formation
         fields = ("id", "title", "description", "category", "branche", "niveau",
-                  "access_subscription_types", "is_public", "cover_url", "cover_key",
+                  "access_subscription_types", "is_public", "price", "cover_url", "cover_key",
                   "status", "publish_at", "order", "module_count", "courses_count",
                   "created_at", "updated_at")
         read_only_fields = ("id", "created_at", "updated_at")
@@ -201,6 +201,15 @@ class AdminFormationSerializer(serializers.ModelSerializer):
         if status_value == FormationStatus.SCHEDULED and not publish_at:
             raise serializers.ValidationError(
                 {"publish_at": "Une date de publication est requise pour une formation programmée."})
+        # Le prix à l'unité n'a de sens que pour une formation payante : sinon elle est
+        # déjà accessible sans achat, et le prix est effacé.
+        types = attrs.get("access_subscription_types",
+                          getattr(self.instance, "access_subscription_types", []))
+        is_public = attrs.get("is_public", getattr(self.instance, "is_public", False))
+        if not types or is_public:
+            attrs["price"] = None
+        elif attrs.get("price") == 0:
+            attrs["price"] = None
         return attrs
 
 
@@ -369,13 +378,14 @@ class TransactionSerializer(serializers.ModelSerializer):
     payment_method = serializers.SerializerMethodField()
     reference = serializers.CharField(source="swinmo_ref", read_only=True)
     created_at = serializers.DateTimeField(source="paid_at", read_only=True)
+    formation_title = serializers.CharField(source="formation.title", read_only=True, default=None)
 
     class Meta:
         model = Payment
         fields = (
             "id", "user_id", "user_name", "user_email", "kind", "status",
             "amount", "currency", "payment_method", "reference", "reason",
-            "paid_at", "created_at"
+            "formation_title", "paid_at", "created_at"
         )
 
     def get_status(self, obj) -> str:

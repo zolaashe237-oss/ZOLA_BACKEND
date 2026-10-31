@@ -19,6 +19,7 @@ from apps.accounts.models import Role, User, UserStatus
 
 from . import swinmo
 from .models import (
+    FormationPurchase,
     Payment,
     PaymentStatus,
     PaymentType,
@@ -47,6 +48,26 @@ def has_subscription_access(user, sub_type: str) -> bool:
     if sub_type == SubscriptionType.MEMBRE:
         return user.status == UserStatus.ACTIF
     return False
+
+
+def purchased_formation_ids(user) -> set[int]:
+    """Formations achetées à l'unité par le membre (mémorisé sur l'objet user, par requête)."""
+    if not getattr(user, "is_authenticated", False):
+        return set()
+    cached = getattr(user, "_purchased_formation_ids", None)
+    if cached is None:
+        cached = set(FormationPurchase.objects.filter(user=user).values_list("formation_id", flat=True))
+        user._purchased_formation_ids = cached
+    return cached
+
+
+def has_purchased_formation(user, formation) -> bool:
+    return formation.pk in purchased_formation_ids(user)
+
+
+def forget_purchased_formations(user) -> None:
+    """Invalide le cache des achats porté par cette instance utilisateur."""
+    user.__dict__.pop("_purchased_formation_ids", None)
 
 
 # ─── Catalogue des paiements (kind → tarif/produit Swinmo) ──────────────────
@@ -97,14 +118,20 @@ def resolve_plan(kind: str) -> Plan:
 
 # ─── Initiation d'un paiement (création du lien Swinmo) ─────────────────────
 
-def initiate_payment(user, kind: str, amount: int | None = None) -> dict:
+def initiate_payment(user, kind: str, amount: int | None = None, formation=None) -> dict:
     """Crée un PAYMENTS EN_ATTENTE et le lien de paiement Swinmo.
 
     Notre `reference` interne (UUID) est stockée dans `swinmo_ref` et renvoyée
     dans le `metadata` Swinmo → réconciliation et idempotence au webhook (RG-08).
-    Pour un don, `amount` (libre) prime sur le montant plancher du plan.
+    Pour un don, `amount` (libre) prime sur le montant plancher du plan. Pour un
+    achat de formation, le montant est le prix de la `formation` fixé par l'admin.
     """
-    plan = resolve_plan(kind)
+    if kind == "FORMATION":
+        product_id = (getattr(settings, "SWINMO_PRODUCT_FORMATION", "")
+                      or settings.SWINMO_PRODUCT_INSCRIPTION)
+        plan = Plan("FORMATION", product_id, formation.price, PaymentType.FORMATION, None)
+    else:
+        plan = resolve_plan(kind)
     effective_amount = amount if (kind == "DON" and amount) else plan.amount
     reference = uuid4().hex
 
@@ -114,6 +141,7 @@ def initiate_payment(user, kind: str, amount: int | None = None) -> dict:
         status=PaymentStatus.EN_ATTENTE,
         amount=effective_amount,
         swinmo_ref=reference,
+        formation=formation if kind == "FORMATION" else None,
     )
 
     # Mode MOCK (aucune clé Swinmo) : on renvoie une page de paiement simulé du
@@ -125,6 +153,8 @@ def initiate_payment(user, kind: str, amount: int | None = None) -> dict:
                 "amount": effective_amount, "checkout_url": checkout_url, "mock": True}
 
     metadata = {"reference": reference, "user_id": user.id, "kind": kind}
+    if kind == "FORMATION":
+        metadata["formation_id"] = formation.id
     
     logger.info(f"[Swinmo] Initiation paiement pour user={user.id}, kind={kind}, amount={effective_amount}")
     
@@ -151,6 +181,8 @@ def confirm_mock_payment(user, reference: str) -> str:
         user=user, swinmo_ref=reference, status=PaymentStatus.EN_ATTENTE).first()
     if payment is None:
         raise ValueError("Paiement introuvable ou déjà traité.")
+    # Même instance que l'appelant : les effets (statut, cache des achats) lui sont visibles.
+    payment.user = user
     # kind == type (INSCRIPTION / COTISATION / DON) dans le modèle du livret.
     activate_paid_payment(payment, payment.type)
     return payment.type
@@ -226,13 +258,22 @@ def activate_paid_payment(payment: Payment, kind: str) -> None:
 
     elif kind == "COTISATION":
         # La cotisation prolonge l'échéance d'un adhérent et (re)active l'accès.
-        if is_member(user):
-            sub = Subscription.objects.filter(
-                user=user, type=SubscriptionType.MEMBRE, active=True).first()
-            extend_subscription(sub, period)
-            payment.subscription = sub
-            if user.status == UserStatus.RESTREINT:
-                user.set_status(UserStatus.ACTIF)
+        # 1er paiement d'un non-adhérent (offre « Accès mensuel » choisie à
+        # l'inscription) : il ouvre l'adhésion. Sans cela le paiement était encaissé
+        # mais le compte restait RESTREINT.
+        sub, _ = Subscription.objects.get_or_create(
+            user=user, type=SubscriptionType.MEMBRE, active=True,
+            defaults={"start": timezone.now().date(), "end": None},
+        )
+        extend_subscription(sub, period)
+        payment.subscription = sub
+        if user.status == UserStatus.RESTREINT:
+            user.set_status(UserStatus.ACTIF)
+        levels = list(user.access_levels or [])
+        if "MEMBRE" not in levels:
+            levels.append("MEMBRE")
+            user.access_levels = levels
+            user.save(update_fields=["access_levels"])
 
     elif kind == "ANNUEL":
         # Cotisation annuelle : prolonge l'échéance de 12 périodes mensuelles
@@ -250,6 +291,13 @@ def activate_paid_payment(payment: Payment, kind: str) -> None:
 
     elif kind == "DON":
         pass  # facultatif, aucun effet sur l'accès
+
+    elif kind == "FORMATION":
+        # Achat à l'unité : accès permanent à cette seule formation.
+        if payment.formation_id:
+            FormationPurchase.objects.get_or_create(
+                user=user, formation_id=payment.formation_id, defaults={"payment": payment})
+            forget_purchased_formations(user)
 
     elif kind == "BRANCHE_FEMME":
         levels = list(user.access_levels or [])
@@ -269,7 +317,7 @@ def activate_paid_payment(payment: Payment, kind: str) -> None:
     _send_confirmation(user.email, kind, full_name=user.full_name, amount=payment.amount)
     _create_payment_notification(user, kind, payment.amount)
     # Parrainage : valide la commission du parrain au premier abonnement du filleul.
-    if kind != "DON":
+    if kind not in ("DON", "FORMATION"):
         try:
             from apps.affiliate.services import validate_referral
             validate_referral(user)
@@ -293,6 +341,7 @@ def _create_payment_notification(user, kind: str, amount: int) -> None:
             "DON":            "Don enregistré",
             "BRANCHE_FEMME":  "Branche Femme",
             "BRANCHE_ENFANT": "Branche Enfant",
+            "FORMATION":      "Achat de formation",
         }
         label = labels.get(kind, kind)
         Notification.objects.create(
@@ -361,6 +410,43 @@ def process_webhook_event(event: str, data: dict) -> str:
     return "ignored-event"
 
 
+# ─── Activation / désactivation globale de la cotisation mensuelle ──────────
+
+def suspend_monthly_requirement() -> int:
+    """Cotisation désactivée : réactive les adhérents restreints pour échéance dépassée.
+
+    Seuls les membres RESTREINT dont l'adhésion MEMBRE est active mais échue sont
+    concernés (un retard de cotisation) ; les non-adhérents et les BLOQUÉ ne
+    bougent pas. Renvoie le nombre de membres réactivés.
+    """
+    today = timezone.now().date()
+    expired = Subscription.objects.filter(
+        type=SubscriptionType.MEMBRE, active=True, end__lt=today).values("user_id")
+    users = User.objects.filter(role=Role.MEMBER, status=UserStatus.RESTREINT, id__in=expired)
+    count = 0
+    for user in users:
+        user.set_status(UserStatus.ACTIF)
+        count += 1
+    return count
+
+
+# Délai laissé aux membres pour régler leur cotisation quand elle est réactivée
+# (≥ 7 j pour qu'ils reçoivent les rappels J-7/J-3/J-1).
+MONTHLY_RESUME_NOTICE_DAYS = 7
+
+
+def resume_monthly_requirement() -> int:
+    """Cotisation réactivée : repousse les échéances dépassées à J+7.
+
+    Pendant la désactivation, aucune cotisation n'était exigée : sans ce report,
+    le cron restreindrait dès le lendemain tous les membres dont l'échéance est
+    passée. Renvoie le nombre d'adhésions repoussées.
+    """
+    new_end = timezone.now().date() + timedelta(days=MONTHLY_RESUME_NOTICE_DAYS)
+    return Subscription.objects.filter(
+        type=SubscriptionType.MEMBRE, active=True, end__lt=new_end).update(end=new_end)
+
+
 # ─── Cron quotidien des statuts (RG-02, RG-03) ──────────────────────────────
 
 def _membership(user):
@@ -377,7 +463,12 @@ def run_daily_status_check() -> dict:
     (J-7/J-3/J-1), rappel de cotisation. Un ACTIF forcé par l'admin dans les
     dernières 24h n'est pas modifié (exception RG-02).
     """
+    from apps.accounts.features import monthly_subscription_enabled
     from .tasks import send_payment_reminder
+
+    # Cotisation mensuelle désactivée : l'échéance d'accès n'est plus appliquée.
+    if not monthly_subscription_enabled():
+        return {"restricted": 0, "reminders": 0, "skipped": "monthly_subscription_disabled"}
 
     now = timezone.now()
     today = now.date()

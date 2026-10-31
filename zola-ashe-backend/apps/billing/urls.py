@@ -11,6 +11,7 @@ urlpatterns = [
     path("subscription-types/", views.SubscriptionTypesView.as_view(), name="subscription-types"),
     path("payments/initiate/", views.InitiatePaymentView.as_view(), name="payment-initiate"),
     path("payments/mock-confirm/", views.MockConfirmView.as_view(), name="payment-mock-confirm"),
+    path("payments/status/", views.PaymentStatusView.as_view(), name="payment-status"),
     path("subscriptions/", views.MySubscriptionsView.as_view(), name="my-subscriptions"),
     path("subscriptions/close/", views.CloseSubscriptionView.as_view(), name="subscription-close"),
     path("webhooks/swinmo/", views.SwinmoWebhookView.as_view(), name="swinmo-webhook"),

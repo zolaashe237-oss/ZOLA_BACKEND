@@ -199,11 +199,33 @@ class ActivationTests(APITestCase):
         self.user.refresh_from_db()
         self.assertEqual(self.user.status, UserStatus.ACTIF)
 
-    def test_cotisation_without_membership_keeps_restreint(self):
+    def test_first_cotisation_opens_membership(self):
+        # Offre « Accès mensuel » choisie à l'inscription : la 1re mensualité ouvre l'adhésion
+        # (avant correctif, le paiement était encaissé et le compte restait RESTREINT).
         p = make_pending(self.user, ptype=PaymentType.COTISATION, amount=2000, ref="c2")
         activate_paid_payment(p, "COTISATION")
         self.user.refresh_from_db()
-        self.assertEqual(self.user.status, UserStatus.RESTREINT)  # pas adhérent → inchangé
+        self.assertEqual(self.user.status, UserStatus.ACTIF)
+        self.assertTrue(is_member(self.user))
+        self.assertIn("MEMBRE", self.user.access_levels)
+
+    def test_repair_command_reopens_blocked_monthly_members(self):
+        from io import StringIO
+        from django.core.management import call_command
+        # Compte resté RESTREINT avec une cotisation validée mais sans adhésion (ancien bug).
+        Payment.objects.create(user=self.user, type=PaymentType.COTISATION,
+                               status=PaymentStatus.VALIDE, amount=2000, swinmo_ref="old")
+        out = StringIO()
+        call_command("repair_monthly_memberships", stdout=out)          # aperçu
+        self.assertIn("1 compte(s) à réparer", out.getvalue())
+        self.assertFalse(is_member(self.user))
+        call_command("repair_monthly_memberships", "--apply", stdout=StringIO())
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.status, UserStatus.ACTIF)
+        self.assertTrue(is_member(self.user))
+        out = StringIO()
+        call_command("repair_monthly_memberships", stdout=out)          # idempotent
+        self.assertIn("0 compte(s)", out.getvalue())
 
     def test_don_has_no_access_effect(self):
         p = make_pending(self.user, ptype=PaymentType.DON, amount=5000, ref="d1")

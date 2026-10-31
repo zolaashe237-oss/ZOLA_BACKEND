@@ -69,8 +69,11 @@ class SubscriptionTypesView(APIView):
     permission_classes = [AllowAny]
 
     def get(self, _request):
+        from apps.accounts.features import monthly_subscription_enabled
         from .models import SubscriptionPlan
         plans = SubscriptionPlan.objects.filter(is_active=True).order_by("billing", "name")
+        if not monthly_subscription_enabled():
+            plans = plans.exclude(kind="COTISATION")
         result = []
         for p in plans:
             effective_amount = p.tranche_amount if (p.billing == "TRANCHES" and p.tranche_amount) else p.price_total
@@ -121,7 +124,8 @@ class InitiatePaymentView(generics.GenericAPIView):
         serializer.is_valid(raise_exception=True)
         data = serializer.validated_data
         try:
-            result = initiate_payment(request.user, data["kind"], data.get("amount"))
+            result = initiate_payment(request.user, data["kind"], data.get("amount"),
+                                      formation=data.get("formation"))
         except swinmo.SwinmoError as exc:
             return Response({"detail": f"Service de paiement indisponible. Réessayez plus tard. {exc}"},
                             status=status.HTTP_502_BAD_GATEWAY)
@@ -152,6 +156,38 @@ class MockConfirmView(APIView):
         except ValueError as exc:
             return Response({"detail": str(exc)}, status=status.HTTP_400_BAD_REQUEST)
         return Response({"confirmed": True, "kind": kind})
+
+
+@extend_schema(
+    tags=["Paiements & adhésion"],
+    summary="Statut d'un de mes paiements (page de retour)",
+    description="Utilisé par la page de retour Swinmo pour suivre la confirmation du paiement. "
+                "Recherche par `ref` (notre référence interne) puis par `payment_id` : le webhook "
+                "peut remplacer la référence par l'identifiant de commande Swinmo.",
+)
+class PaymentStatusView(APIView):
+    """Statut d'un paiement du membre connecté, retrouvé par référence ou par identifiant."""
+    permission_classes = [IsAuthenticated]
+
+    def get(self, request):
+        ref = request.query_params.get("ref", "").strip()
+        payment_id = request.query_params.get("payment_id", "").strip()
+        if not ref and not payment_id.isdigit():
+            return Response({"detail": "Paramètre `ref` ou `payment_id` requis."},
+                            status=status.HTTP_400_BAD_REQUEST)
+        mine = Payment.objects.filter(user=request.user).select_related("formation")
+        payment = (mine.filter(swinmo_ref=ref).first() if ref else None) or \
+                  (mine.filter(pk=int(payment_id)).first() if payment_id.isdigit() else None)
+        if payment is None:
+            return Response({"detail": "Paiement introuvable."}, status=status.HTTP_404_NOT_FOUND)
+        return Response({
+            "payment_id": payment.id,
+            "status": payment.status,
+            "kind": payment.type,
+            "amount": payment.amount,
+            "formation_id": payment.formation_id,
+            "formation_title": payment.formation.title if payment.formation else None,
+        })
 
 
 @extend_schema_view(

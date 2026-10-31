@@ -26,6 +26,7 @@ def send_confirmation_email(email: str, kind: str,
         "DON": "votre don à la communauté",
         "BRANCHE_FEMME": "votre accès Branche Femme",
         "BRANCHE_ENFANT": "votre accès Branche Enfant",
+        "FORMATION": "votre achat de formation",
     }
     libelle = labels.get(kind, "votre paiement")
 
@@ -74,7 +75,10 @@ def send_confirmation_email(email: str, kind: str,
 @app.task
 def send_payment_reminder(user_id: int):
     """Rappel de cotisation à un membre (RG-03, J1/J7/J15)."""
+    from apps.accounts.features import monthly_subscription_enabled
     from apps.accounts.models import User
+    if not monthly_subscription_enabled():
+        return "cotisation mensuelle désactivée"
     user = User.objects.filter(id=user_id).first()
     if user is None:
         return "user introuvable"

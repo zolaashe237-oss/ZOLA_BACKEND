@@ -181,10 +181,13 @@ def formation_accessible(user, formation: Formation, accessible_types=None) -> b
     required = formation.access_subscription_types or []
     if not required:
         return True  # formation publique
+    from apps.billing.services import has_purchased_formation, has_subscription_access
     if accessible_types is not None:
-        return any(t in accessible_types for t in required)
-    from apps.billing.services import has_subscription_access
-    return any(has_subscription_access(user, t) for t in required)
+        if any(t in accessible_types for t in required):
+            return True
+    elif any(has_subscription_access(user, t) for t in required):
+        return True
+    return has_purchased_formation(user, formation)  # achat à l'unité
 
 
 # ─── Déblocage séquentiel & complétion (RG-16, RG-26, RG-28) ────────────────
@@ -204,7 +207,20 @@ INTER_FORMATION_PASS_THRESHOLD = 14
 
 
 def _course_quiz(course: Course):
+    """QCM actif du cours — aucun si les quiz sont désactivés globalement."""
+    from apps.accounts.features import quiz_enabled
+    if not quiz_enabled():
+        return None
     quiz = getattr(course, "quiz", None)
+    return quiz if (quiz and quiz.active) else None
+
+
+def _final_exam(formation: Formation):
+    """Examen final actif de la formation — aucun si les quiz sont désactivés globalement."""
+    from apps.accounts.features import quiz_enabled
+    if not quiz_enabled():
+        return None
+    quiz = getattr(formation, "final_exam", None)
     return quiz if (quiz and quiz.active) else None
 
 
@@ -225,8 +241,8 @@ def formation_final_quiz_passed(user, formation: Formation) -> bool:
     """
     if not getattr(user, "is_authenticated", False):
         return False
-    quiz = getattr(formation, "final_exam", None)
-    if not (quiz and quiz.active):
+    quiz = _final_exam(formation)
+    if quiz is None:
         return True
     return QuizResult.objects.filter(
         user=user, quiz=quiz, score__gte=INTER_FORMATION_PASS_THRESHOLD
@@ -257,8 +273,8 @@ def formation_completed(user, formation: Formation) -> bool:
     if not courses:
         return True
 
-    quiz_final = getattr(formation, "final_exam", None)
-    if quiz_final and quiz_final.active:
+    quiz_final = _final_exam(formation)
+    if quiz_final is not None:
         return QuizResult.objects.filter(
             user=user, quiz=quiz_final, score__gte=INTER_FORMATION_PASS_THRESHOLD
         ).exists()
@@ -281,6 +297,10 @@ def formation_prerequisite_met(user, formation: Formation) -> bool:
     if not getattr(user, "is_authenticated", False):
         return True
     if formation.is_public:
+        return True
+    # Formation achetée seule : pas de parcours imposé dans la branche.
+    from apps.billing.services import has_purchased_formation
+    if has_purchased_formation(user, formation):
         return True
 
     # Normalisation de la branche : MEMBRE, GENERALE et chaîne vide représentent le tronc commun

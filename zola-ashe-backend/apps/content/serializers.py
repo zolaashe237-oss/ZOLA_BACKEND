@@ -10,6 +10,8 @@ from rest_framework import serializers
 
 from .models import Audio, Choice, Course, Formation, LibraryPdf, LiveSession, Module, Question, Quiz, QuizResult, Resource
 from .services import (
+    _course_quiz,
+    _final_exam,
     course_state,
     final_exam_unlocked,
     formation_accessible,
@@ -50,9 +52,15 @@ def serialize_resource(resource: Resource, *, unlocked: bool) -> dict:
 
 def serialize_course(course: Course, *, user, accessible: bool) -> dict:
     """Cours + ses ressources + son QCM (résumé)."""
+    from .models import CourseCompletion, CourseStart
     state = course_state(user, course, accessible)
     unlocked = not state["locked"]
-    quiz = getattr(course, "quiz", None)
+    quiz = _course_quiz(course)
+    is_auth = getattr(user, "is_authenticated", False)
+    # watched = vidéo vue jusqu'à la fin (CourseCompletion)
+    # started = vidéo lancée mais pas nécessairement terminée (CourseStart)
+    watched = CourseCompletion.objects.filter(user=user, course=course).exists() if is_auth else False
+    started = watched or (CourseStart.objects.filter(user=user, course=course).exists() if is_auth else False)
     return {
         "id": course.id,
         "title": course.title,
@@ -60,10 +68,12 @@ def serialize_course(course: Course, *, user, accessible: bool) -> dict:
         "order": course.order,
         "access": {"locked": state["locked"], "lock_reason": state["lock_reason"]},
         "completed": state["completed"],
+        "watched": watched,
+        "started": started,
         "resources": [serialize_resource(r, unlocked=unlocked) for r in course.resources.all()],
         "quiz": ({"id": quiz.id, "title": quiz.title, "question_count": quiz.questions.count(),
                   "pass_threshold": quiz.pass_threshold}
-                 if quiz and quiz.active else None),
+                 if quiz else None),
     }
 
 
@@ -93,12 +103,17 @@ class FormationListSerializer(serializers.ModelSerializer):
     lock_reason = serializers.SerializerMethodField()
     module_count = serializers.SerializerMethodField()
     preview_youtube_id = serializers.SerializerMethodField()
+    purchased = serializers.SerializerMethodField()
+
+    def get_purchased(self, obj) -> bool:
+        from apps.billing.services import has_purchased_formation
+        return has_purchased_formation(self.context["request"].user, obj)
 
     class Meta:
         model = Formation
         fields = ("id", "slug", "title", "description", "category", "branch", "level",
                   "cover", "is_public", "is_reserved", "locked", "lock_reason", "module_count",
-                  "preview_youtube_id")
+                  "preview_youtube_id", "price", "purchased")
 
     def get_cover(self, obj) -> str:
         # Les covers de formations sont dans le bucket public (default_storage)
@@ -150,11 +165,17 @@ class FormationDetailSerializer(serializers.ModelSerializer):
     lock_reason = serializers.SerializerMethodField()
     modules = serializers.SerializerMethodField()
     final_exam = serializers.SerializerMethodField()
+    purchased = serializers.SerializerMethodField()
+
+    def get_purchased(self, obj) -> bool:
+        from apps.billing.services import has_purchased_formation
+        return has_purchased_formation(self.context["request"].user, obj)
 
     class Meta:
         model = Formation
         fields = ("id", "slug", "title", "description", "category", "branch", "level",
-                  "cover", "is_reserved", "locked", "lock_reason", "modules", "final_exam")
+                  "cover", "is_reserved", "locked", "lock_reason", "modules", "final_exam",
+                  "price", "purchased")
 
     def _accessible(self, obj) -> bool:
         types = self.context.get("accessible_sub_types")
@@ -186,8 +207,8 @@ class FormationDetailSerializer(serializers.ModelSerializer):
 
     @extend_schema_field(OpenApiTypes.OBJECT)
     def get_final_exam(self, obj):
-        exam = getattr(obj, "final_exam", None)
-        if not exam or not exam.active:
+        exam = _final_exam(obj)
+        if exam is None:
             return None
         user = self.context["request"].user
         accessible = self._accessible(obj)

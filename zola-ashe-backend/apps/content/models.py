@@ -78,6 +78,9 @@ class Formation(models.Model):
     access_subscription_types = models.JSONField(default=list, blank=True)
     # Contenu public : visible par les visiteurs non connectés (landing page, SEO)
     is_public = models.BooleanField(default=False)
+    # Prix d'achat à l'unité (FCFA) pour les membres sans abonnement. NULL = non vendue
+    # seule. Réservé aux formations payantes (access_subscription_types non vide).
+    price = models.PositiveIntegerField(null=True, blank=True)
 
     cover_url = models.URLField(blank=True)                   # couverture externe (legacy/seed)
     cover_key = models.CharField(max_length=512, blank=True)  # couverture hébergée (signée)
@@ -394,4 +397,18 @@ class CourseCompletion(models.Model):
 
     def __str__(self):
         return f"{self.user_id} - Course {self.course_id}"
+
+
+class CourseStart(models.Model):
+    """Marquage d'un cours démarré (vidéo lancée) — distinct de la complétion (fin de vidéo)."""
+    user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="course_starts")
+    course = models.ForeignKey(Course, on_delete=models.CASCADE, related_name="starts")
+    started_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "course_starts"
+        unique_together = ("user", "course")
+
+    def __str__(self):
+        return f"{self.user_id} - Course {self.course_id} started"
 

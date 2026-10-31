@@ -19,6 +19,7 @@ class PaymentType(models.TextChoices):
     BRANCHE_FEMME  = "BRANCHE_FEMME",  "Accès espace Femme"
     BRANCHE_ENFANT = "BRANCHE_ENFANT", "Accès espace Enfant"
     DON            = "DON",            "Don volontaire"
+    FORMATION      = "FORMATION",      "Achat d'une formation"
     REMBOURSEMENT  = "REMBOURSEMENT",  "Remboursement"
 
 
@@ -56,11 +57,28 @@ class Payment(models.Model):
     amount = models.IntegerField()  # FCFA ; négatif pour un remboursement
     swinmo_ref = models.CharField(max_length=128, unique=True, null=True, blank=True)
     reason = models.CharField(max_length=255, blank=True)  # ex. « Exonération admin » (RG-40)
+    # Formation achetée (type=FORMATION uniquement).
+    formation = models.ForeignKey(
+        "content.Formation", on_delete=models.SET_NULL, null=True, blank=True, related_name="payments")
     paid_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = "payments"
         indexes = [models.Index(fields=["user", "type", "status"])]
+
+
+class FormationPurchase(models.Model):
+    """Accès permanent à une formation achetée à l'unité, sans abonnement."""
+    user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="formation_purchases")
+    formation = models.ForeignKey("content.Formation", on_delete=models.CASCADE, related_name="purchases")
+    payment = models.ForeignKey(Payment, on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name="formation_purchases")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "formation_purchases"
+        constraints = [models.UniqueConstraint(fields=["user", "formation"],
+                                               name="uniq_formation_purchase")]
 
 
 class SubscriptionPlan(models.Model):

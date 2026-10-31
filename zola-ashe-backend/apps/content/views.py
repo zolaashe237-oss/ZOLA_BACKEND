@@ -163,9 +163,13 @@ class FormationViewSet(viewsets.ReadOnlyModelViewSet):
 
         # Masquer les formations protégées des branches non accessibles.
         # Les formations is_public=True restent visibles pour tous les membres connectés.
+        # Exception : les formations vendues à l'unité (ou déjà achetées) restent
+        # visibles pour pouvoir être achetées puis suivies.
+        from apps.billing.services import purchased_formation_ids
+        purchasable = Q(price__gt=0) | Q(pk__in=purchased_formation_ids(user))
         for branch in ("MEMBRE", "FEMME", "ENFANT"):
             if not _user_has_access_to_branch(user, branch):
-                qs = qs.exclude(branch=branch, is_public=False)
+                qs = qs.exclude(Q(branch=branch, is_public=False) & ~purchasable)
         if self.action == "retrieve":
             qs = qs.prefetch_related(
                 "modules__courses__resources", "modules__courses__quiz__questions",
@@ -278,6 +282,15 @@ class CourseViewSet(viewsets.ReadOnlyModelViewSet):
 
         CourseCompletion.objects.get_or_create(user=request.user, course=course)
         return Response({"status": "completed", "course_id": course.id, "formation_id": formation.id})
+
+    @action(detail=True, methods=["post"], url_path="start")
+    def start(self, request, pk=None):
+        from .models import CourseStart
+        course = self.get_object()
+        if not formation_accessible(request.user, course.module.formation):
+            return Response({"detail": "Formation réservée."}, status=status.HTTP_403_FORBIDDEN)
+        CourseStart.objects.get_or_create(user=request.user, course=course)
+        return Response({"status": "started", "course_id": course.id})
 
 
 
