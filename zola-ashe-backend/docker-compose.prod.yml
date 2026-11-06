@@ -25,13 +25,16 @@ services:
         condition: service_healthy
 
   db:
-    image: postgres:15
+    # Version alignee sur Neon (18.x) : un dump PG18 ne se restaure pas sur un serveur plus ancien.
+    image: postgres:18
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      # PG18+ : monter /var/lib/postgresql (et non /data). Volume NEUF pgdata18 : un
+      # ancien volume pgdata (PG15) ne peut pas etre relu par le serveur 18.
+      - pgdata18:/var/lib/postgresql
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER}"]
       interval: 5s
@@ -244,7 +247,7 @@ services:
       done"
 
 volumes:
-  pgdata:
+  pgdata18:
   redisdata:
   staticfiles:
   miniodata:
