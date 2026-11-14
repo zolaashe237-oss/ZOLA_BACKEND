@@ -377,7 +377,8 @@ WEB_BASE_URL = env("WEB_BASE_URL", default="http://localhost:3000")
 
 # Mode MOCK : si aucune clé Swinmo/Brevo n'est fournie, on simule le service
 # externe pour que les parcours restent complets en local (paiement simulé,
-# code OTP renvoyé dans la réponse). Jamais actif si une vraie clé est posée.
+# code OTP renvoyé dans la réponse). Jamais actif si une vraie clé est posée,
+# et toujours désactivé en production (config/settings/prod.py).
 SWINMO_MOCK = env.bool("SWINMO_MOCK", default=not SWINMO_SECRET_KEY)
 
 # --- Internationalisation ---------------------------------------------------
