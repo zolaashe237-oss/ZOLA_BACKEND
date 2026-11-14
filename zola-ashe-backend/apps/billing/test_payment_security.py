@@ -359,3 +359,44 @@ class UnpaidReminderTests(APITestCase):
         self.send_email.assert_called_once_with(payment.pk)
         send_unpaid_payment_reminder.run(payment.pk)   # rendu réel de l'email
         self.assertIn("/inscription?step=3", mail.outbox[-1].body)
+
+
+# ─── 9. Routes payantes : paiement confirmé obligatoire ─────────────────────
+
+@override_settings(**BASE_SETTINGS, SWINMO_MOCK=False)
+class PaidRoutesTests(APITestCase):
+    """Un paiement en attente ou au montant non conforme n'ouvre rien : seul un paiement
+    VALIDE (confirmé par Swinmo) donne accès, et l'accès est vérifié côté serveur."""
+
+    def setUp(self):
+        from apps.content.models import Course, Formation, FormationStatus, LibraryPdf, Module
+        self.user = User.objects.create_user("pr@t.io", "pwd", full_name="PR", status=UserStatus.RESTREINT)
+        self.formation = Formation.objects.create(title="Payante", slug="payante", price=15000,
+                                                  access_subscription_types=["MEMBRE"],
+                                                  status=FormationStatus.PUBLISHED)
+        self.course = Course.objects.create(module=Module.objects.create(formation=self.formation, title="M"),
+                                            title="C", order=1)
+        self.book = LibraryPdf.objects.create(title="Livre", bucket_key="k", access_level="MEMBRE",
+                                              price=3000, is_active=True)
+        for status, ref in ((PaymentStatus.EN_ATTENTE, "pr_pending"), (PaymentStatus.AMOUNT_MISMATCH, "pr_ko")):
+            Payment.objects.create(user=self.user, type=PaymentType.FORMATION, status=status, amount=15000,
+                                   swinmo_ref=f"{ref}_f", formation=self.formation)
+            Payment.objects.create(user=self.user, type=PaymentType.LIVRE, status=status, amount=3000,
+                                   swinmo_ref=f"{ref}_l", library_pdf=self.book)
+            Payment.objects.create(user=self.user, type=PaymentType.INSCRIPTION, status=status, amount=10000,
+                                   swinmo_ref=f"{ref}_i")
+        self.client.force_authenticate(self.user)
+
+    def test_unconfirmed_payments_open_nothing(self):
+        self.assertTrue(self.client.get(f"/api/formations/{self.formation.id}/").json()["locked"])
+        self.assertEqual(self.client.post(f"/api/courses/{self.course.id}/complete/").status_code, 403)
+        self.assertEqual(self.client.get(f"/api/library/{self.book.id}/stream/").status_code, 403)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.status, UserStatus.RESTREINT)
+
+    def test_access_flags_cannot_be_set_by_the_client(self):
+        """Le profil ne permet pas de s'attribuer un statut ou une branche."""
+        self.client.patch("/api/me/", {"status": "ACTIF", "access_levels": ["MEMBRE", "FEMME"]}, format="json")
+        self.user.refresh_from_db()
+        self.assertEqual((self.user.status, self.user.access_levels), (UserStatus.RESTREINT, []))
+        self.assertTrue(self.client.get(f"/api/formations/{self.formation.id}/").json()["locked"])
