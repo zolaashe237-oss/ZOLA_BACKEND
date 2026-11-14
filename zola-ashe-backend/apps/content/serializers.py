@@ -274,12 +274,23 @@ class LiveSessionSerializer(serializers.ModelSerializer):
 
 class LibraryPdfPublicSerializer(serializers.ModelSerializer):
     cover = serializers.SerializerMethodField()
+    locked = serializers.SerializerMethodField()
+    purchased = serializers.SerializerMethodField()
 
     class Meta:
         model = LibraryPdf
         fields = ("id", "title", "description", "category", "branche",
                   "access_level", "cover", "nb_pages", "size_mo",
-                  "is_gratuit", "created_at")
+                  "is_gratuit", "price", "locked", "purchased", "created_at")
+
+    def get_locked(self, obj) -> bool:
+        from .services import library_pdf_accessible
+        return not library_pdf_accessible(self.context["request"].user, obj,
+                                          allowed_levels=self.context.get("allowed_levels"))
+
+    def get_purchased(self, obj) -> bool:
+        from apps.billing.services import has_purchased_library_pdf
+        return has_purchased_library_pdf(self.context["request"].user, obj)
 
     def get_cover(self, obj) -> str:
         if obj.cover_key:

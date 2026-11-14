@@ -43,6 +43,7 @@ const PAYMENT_KIND_LABEL: Record<PaymentKind, string> = {
   INSCRIPTION: "Inscription",
   DON: "Don",
   FORMATION: "Formation",
+  LIVRE: "Livre",
   CADEAU: "Cadeau",
   REMBOURSEMENT: "Remboursement",
   EXONERATION: "Exonération",

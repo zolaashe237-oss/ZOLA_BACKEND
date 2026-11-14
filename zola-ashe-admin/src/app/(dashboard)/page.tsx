@@ -19,11 +19,11 @@ const TX_STATUS_LABEL: Record<PaymentStatus, string> = {
   REMBOURSE: "Remboursé", EXONERE: "Exonéré",
 };
 const TX_KIND_COLOR: Record<PaymentKind, string> = {
-  COTISATION: "#c9a227", INSCRIPTION: "#5fb98a", DON: "#b5532a", FORMATION: "#5b8fd4",
+  COTISATION: "#c9a227", INSCRIPTION: "#5fb98a", DON: "#b5532a", FORMATION: "#5b8fd4", LIVRE: "#8b5a2b",
   CADEAU: "#d9a441", REMBOURSEMENT: "#7d7264", EXONERATION: "#243a85",
 };
 const TX_KIND_LABEL: Record<PaymentKind, string> = {
-  COTISATION: "Cotisation", INSCRIPTION: "Inscription", DON: "Don", FORMATION: "Formation",
+  COTISATION: "Cotisation", INSCRIPTION: "Inscription", DON: "Don", FORMATION: "Formation", LIVRE: "Livre",
   CADEAU: "Cadeau", REMBOURSEMENT: "Remboursement", EXONERATION: "Exonération",
 };
 

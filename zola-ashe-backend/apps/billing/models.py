@@ -20,6 +20,7 @@ class PaymentType(models.TextChoices):
     BRANCHE_ENFANT = "BRANCHE_ENFANT", "Accès espace Enfant"
     DON            = "DON",            "Don volontaire"
     FORMATION      = "FORMATION",      "Achat d'une formation"
+    LIVRE          = "LIVRE",          "Achat d'un livre"
     REMBOURSEMENT  = "REMBOURSEMENT",  "Remboursement"
 
 
@@ -27,6 +28,9 @@ class PaymentStatus(models.TextChoices):
     VALIDE = "VALIDE", "Validé"
     EN_ATTENTE = "EN_ATTENTE", "En attente"
     ECHOUE = "ECHOUE", "Échoué"
+    # Payé chez Swinmo mais montant ou devise non conforme : aucun accès accordé,
+    # à traiter par l'admin (alerte journalisée).
+    AMOUNT_MISMATCH = "AMOUNT_MISMATCH", "Montant non conforme"
 
 
 class Subscription(models.Model):
@@ -48,23 +52,45 @@ class Subscription(models.Model):
 
 
 class Payment(models.Model):
-    """Trace immuable d'un paiement (RG-36). `swinmo_ref` garantit l'idempotence (RG-08)."""
+    """Trace immuable d'un paiement (RG-36). `swinmo_ref` garantit l'idempotence (RG-08).
+
+    `swinmo_ref` porte NOTRE référence interne (UUID), créée avant l'appel à Swinmo ;
+    `provider_tx_id` l'identifiant de commande Swinmo. `amount` est le montant attendu
+    (calculé côté serveur), `paid_amount` celui confirmé par Swinmo à la vérification.
+    `paid_at` est la date de création du paiement (historique) ; `verified_at` celle
+    de la confirmation chez Swinmo.
+    """
     user = models.ForeignKey("accounts.User", on_delete=models.PROTECT, related_name="payments")
     subscription = models.ForeignKey(
         Subscription, on_delete=models.PROTECT, null=True, blank=True, related_name="payments")
     type = models.CharField(max_length=20, choices=PaymentType.choices)
-    status = models.CharField(max_length=12, choices=PaymentStatus.choices)
-    amount = models.IntegerField()  # FCFA ; négatif pour un remboursement
+    status = models.CharField(max_length=16, choices=PaymentStatus.choices)
+    amount = models.IntegerField()  # montant attendu, FCFA ; négatif pour un remboursement
+    currency = models.CharField(max_length=3, default="XAF")
     swinmo_ref = models.CharField(max_length=128, unique=True, null=True, blank=True)
+    provider_tx_id = models.CharField(max_length=128, blank=True, default="", db_index=True)
+    paid_amount = models.IntegerField(null=True, blank=True)   # montant confirmé par Swinmo
+    verified_at = models.DateTimeField(null=True, blank=True)
+    coupon_code = models.CharField(max_length=64, blank=True, default="")  # réservé (pas de coupons)
+    # Relances d'un paiement abandonné ou échoué (job remind_unpaid_payments).
+    reminder_count = models.PositiveSmallIntegerField(default=0)
+    last_reminder_at = models.DateTimeField(null=True, blank=True)
     reason = models.CharField(max_length=255, blank=True)  # ex. « Exonération admin » (RG-40)
     # Formation achetée (type=FORMATION uniquement).
     formation = models.ForeignKey(
         "content.Formation", on_delete=models.SET_NULL, null=True, blank=True, related_name="payments")
+    # Livre (PDF de la bibliothèque) acheté (type=LIVRE uniquement).
+    library_pdf = models.ForeignKey(
+        "content.LibraryPdf", on_delete=models.SET_NULL, null=True, blank=True, related_name="payments")
     paid_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
         db_table = "payments"
         indexes = [models.Index(fields=["user", "type", "status"])]
+
+    @property
+    def expected_amount(self) -> int:
+        return self.amount
 
 
 class FormationPurchase(models.Model):
@@ -110,3 +136,17 @@ class SubscriptionPlan(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.kind})"
+
+
+class LibraryPdfPurchase(models.Model):
+    """Accès permanent à un livre (PDF de la bibliothèque) acheté à l'unité."""
+    user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="library_purchases")
+    library_pdf = models.ForeignKey("content.LibraryPdf", on_delete=models.CASCADE, related_name="purchases")
+    payment = models.ForeignKey(Payment, on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name="library_purchases")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "library_pdf_purchases"
+        constraints = [models.UniqueConstraint(fields=["user", "library_pdf"],
+                                               name="uniq_library_pdf_purchase")]

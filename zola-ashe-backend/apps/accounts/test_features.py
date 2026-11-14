@@ -141,3 +141,10 @@ class FeatureFlagsTests(APITestCase):
              patch("django.core.cache.cache.set", side_effect=ConnectionError("redis down")):
             self.assertEqual(GlobalSettings.cached().hidden_sections, ["communaute"])
             self.assertEqual(self.client.get("/api/community/posts/").status_code, 403)
+
+    def test_me_exposes_country_for_payment_method(self):
+        """Le front choisit Mobile Money ou carte/WhatsApp selon le pays du profil."""
+        self.member.country = "FR"
+        self.member.save(update_fields=["country"])
+        self.client.force_authenticate(self.member)
+        self.assertEqual(self.client.get("/api/me/").json()["country"], "FR")

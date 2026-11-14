@@ -347,6 +347,9 @@ QUIZ_DEFAULT_THRESHOLD = 15     # seuil quiz /20 (CDC §4.4)
 SUBSCRIPTION_DURATION_DAYS = 365
 COTISATION_PERIOD_DAYS = 30     # une cotisation mensuelle prolonge l'accès de 30 jours
 COTISATION_GRACE_DAYS = 7       # délai de grâce après l'échéance avant RESTREINT (RG-02, RG-03)
+# Paiements restés en attente : revérifiés chez Swinmo (réconciliation, webhook perdu)
+# et relancés auprès du membre pendant au plus ce nombre de jours.
+PAYMENT_FOLLOWUP_MAX_DAYS = env.int("PAYMENT_FOLLOWUP_MAX_DAYS", default=14)
 
 # --- Paiements Swinmo -------------------------------------------------------
 # Doc : https://www.swinmo.shop/developers
@@ -377,7 +380,8 @@ WEB_BASE_URL = env("WEB_BASE_URL", default="http://localhost:3000")
 
 # Mode MOCK : si aucune clé Swinmo/Brevo n'est fournie, on simule le service
 # externe pour que les parcours restent complets en local (paiement simulé,
-# code OTP renvoyé dans la réponse). Jamais actif si une vraie clé est posée.
+# code OTP renvoyé dans la réponse). Jamais actif si une vraie clé est posée,
+# et toujours désactivé en production (config/settings/prod.py).
 SWINMO_MOCK = env.bool("SWINMO_MOCK", default=not SWINMO_SECRET_KEY)
 
 # --- Internationalisation ---------------------------------------------------

@@ -105,3 +105,19 @@ def get_order_details(order_id: str, *, timeout: int = 15) -> dict:
     except requests.RequestException as exc:
         raise SwinmoError(f"Échec de récupération de la commande Swinmo : {exc}") from exc
 
+
+def list_orders_by_email(email: str, *, timeout: int = 15) -> dict:
+    """Commandes Swinmo d'un client (GET /api/developer/{email}) — sert à retrouver une
+    commande dont on ne connaît pas encore l'identifiant (webhook perdu)."""
+    from urllib.parse import quote
+    url = f"{settings.SWINMO_API_URL.rstrip('/')}/api/developer/{quote(email)}"
+    try:
+        resp = requests.get(
+            url,
+            headers={"Authorization": f"Bearer {settings.SWINMO_SECRET_KEY}"},
+            timeout=timeout,
+        )
+        resp.raise_for_status()
+        return resp.json()
+    except requests.RequestException as exc:
+        raise SwinmoError(f"Échec de récupération des commandes Swinmo : {exc}") from exc

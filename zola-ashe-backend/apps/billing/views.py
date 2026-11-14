@@ -1,5 +1,6 @@
 """Vues billing : tarifs publics, initiation de paiement, historique, webhook Swinmo."""
 import json
+import logging
 
 from django.conf import settings
 from drf_spectacular.utils import (
@@ -15,7 +16,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from . import swinmo
-from .models import Payment, Subscription
+from .models import Payment, PaymentStatus, Subscription
 from .serializers import (
     InitiatePaymentSerializer,
     PaymentSerializer,
@@ -26,7 +27,14 @@ from .services import (
     confirm_mock_payment,
     initiate_payment,
     process_webhook_event,
+    verify_and_apply,
 )
+
+# Intervalle minimal entre deux vérifications Swinmo d'un même paiement depuis la page
+# de retour (elle interroge toutes les 3 s).
+RETURN_VERIFY_INTERVAL_S = 15
+
+logger = logging.getLogger(__name__)
 
 _TariffList = inline_serializer(
     name="TariffList", many=True,
@@ -125,7 +133,8 @@ class InitiatePaymentView(generics.GenericAPIView):
         data = serializer.validated_data
         try:
             result = initiate_payment(request.user, data["kind"], data.get("amount"),
-                                      formation=data.get("formation"))
+                                      formation=data.get("formation"),
+                                      library_pdf=data.get("library_pdf"))
         except swinmo.SwinmoError as exc:
             return Response({"detail": f"Service de paiement indisponible. Réessayez plus tard. {exc}"},
                             status=status.HTTP_502_BAD_GATEWAY)
@@ -175,11 +184,12 @@ class PaymentStatusView(APIView):
         if not ref and not payment_id.isdigit():
             return Response({"detail": "Paramètre `ref` ou `payment_id` requis."},
                             status=status.HTTP_400_BAD_REQUEST)
-        mine = Payment.objects.filter(user=request.user).select_related("formation")
+        mine = Payment.objects.filter(user=request.user).select_related("formation", "library_pdf")
         payment = (mine.filter(swinmo_ref=ref).first() if ref else None) or \
                   (mine.filter(pk=int(payment_id)).first() if payment_id.isdigit() else None)
         if payment is None:
             return Response({"detail": "Paiement introuvable."}, status=status.HTTP_404_NOT_FOUND)
+        self._verify_pending(payment)
         return Response({
             "payment_id": payment.id,
             "status": payment.status,
@@ -187,7 +197,28 @@ class PaymentStatusView(APIView):
             "amount": payment.amount,
             "formation_id": payment.formation_id,
             "formation_title": payment.formation.title if payment.formation else None,
+            "library_pdf_id": payment.library_pdf_id,
+            "library_pdf_title": payment.library_pdf.title if payment.library_pdf else None,
         })
+
+    @staticmethod
+    def _verify_pending(payment: Payment) -> None:
+        """Retour navigateur : le paiement n'est jamais validé sur la seule foi du retour.
+        S'il est encore en attente, on interroge Swinmo (GET avec notre clé) — utile si le
+        webhook n'est jamais arrivé. Espacé de RETURN_VERIFY_INTERVAL_S par paiement."""
+        from django.core.cache import cache
+        if payment.status != PaymentStatus.EN_ATTENTE or not payment.swinmo_ref or settings.SWINMO_MOCK:
+            return
+        try:
+            if not cache.add(f"billing:return-verify:{payment.pk}", 1, RETURN_VERIFY_INTERVAL_S):
+                return
+        except Exception:
+            pass  # cache indisponible : on vérifie quand même
+        try:
+            verify_and_apply(payment)
+            payment.refresh_from_db()
+        except Exception:
+            logger.exception("Vérification Swinmo au retour impossible (paiement=%s)", payment.pk)
 
 
 @extend_schema_view(
@@ -274,5 +305,7 @@ class SwinmoWebhookView(APIView):
         event = body.get("event", "")
         data = body.get("data") or {}
         outcome = process_webhook_event(event, data)
-        # Toujours 200 si la signature est valide → évite les re-livraisons inutiles.
+        if outcome == "unknown-payment":
+            # Transaction non initiée par notre système : rejet (et log côté service).
+            return Response({"detail": "Transaction inconnue."}, status=status.HTTP_404_NOT_FOUND)
         return Response({"received": True, "outcome": outcome})

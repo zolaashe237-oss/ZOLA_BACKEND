@@ -11,6 +11,7 @@ from django.utils import timezone
 from rest_framework.test import APITestCase
 
 from apps.accounts.models import Role, User, UserStatus
+from . import swinmo
 from .models import Payment, PaymentStatus, PaymentType, Subscription, SubscriptionType
 from .services import activate_paid_payment, initiate_payment, is_member, run_daily_status_check
 
@@ -46,11 +47,24 @@ def make_member(user, days_left=30):
                                        active=True)
 
 
+def swinmo_order(reference, status="paid", amount=10000, currency="XAF", order_id="order_1"):
+    """Réponse simulée de GET /api/developer/order/:orderId (seule source de vérité)."""
+    return {"success": True, "data": {"orderId": order_id, "status": status, "amount": amount,
+                                      "currency": currency, "metadata": {"reference": reference}}}
+
+
 @override_settings(**TEST_SETTINGS)
 class WebhookTests(APITestCase):
+    """Le webhook ne décide de rien : il retrouve NOTRE paiement puis relit la commande
+    chez Swinmo (GET mocké ici)."""
+
     def setUp(self):
         self.user = User.objects.create_user("u@z.com", "Passw0rd!", full_name="U",
                                               email_verified=True, status=UserStatus.RESTREINT)
+        patcher = patch("apps.billing.swinmo.get_order_details")
+        self.get_order = patcher.start()
+        self.addCleanup(patcher.stop)
+        self.get_order.return_value = swinmo_order("ref1")
 
     def _post(self, payload: dict, signature=None):
         body = json.dumps(payload).encode()
@@ -60,112 +74,62 @@ class WebhookTests(APITestCase):
 
     def test_invalid_signature_rejected(self):
         make_pending(self.user)
-        r = self._post({"event": "order.paid", "data": {"metadata": {"reference": "ref1"}}},
+        r = self._post({"event": "order.paid", "data": {"orderId": "order_1", "reference": "ref1"}},
                        signature="deadbeef")
         self.assertEqual(r.status_code, 401)
         self.user.refresh_from_db()
         self.assertEqual(self.user.status, UserStatus.RESTREINT)  # rien activé
+        self.get_order.assert_not_called()
 
     def test_order_paid_inscription_creates_membership_and_sets_actif(self):
         make_pending(self.user)
-        r = self._post({"event": "order.paid",
-                        "data": {"metadata": {"reference": "ref1", "kind": "INSCRIPTION"}}})
+        r = self._post({"event": "order.paid", "data": {"orderId": "order_1", "reference": "ref1"}})
         self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["outcome"], "activated")
         self.user.refresh_from_db()
         self.assertEqual(self.user.status, UserStatus.ACTIF)
         sub = Subscription.objects.get(user=self.user, type=SubscriptionType.MEMBRE)
-        self.assertTrue(sub.active)
-        # 1ʳᵉ période d'accès incluse → échéance à +30 jours.
         self.assertEqual(sub.end, timezone.now().date() + timedelta(days=30))
-        self.assertEqual(Payment.objects.get(swinmo_ref="ref1").status, PaymentStatus.VALIDE)
+        payment = Payment.objects.get(swinmo_ref="ref1")
+        # Notre référence est conservée ; l'identifiant Swinmo est rangé à part.
+        self.assertEqual((payment.status, payment.provider_tx_id, payment.paid_amount),
+                         (PaymentStatus.VALIDE, "order_1", 10000))
+        self.assertIsNotNone(payment.verified_at)
+        self.get_order.assert_called_once_with("order_1")
 
     def test_idempotent_duplicate_paid_ignored(self):
         make_pending(self.user)
-        payload = {"event": "order.paid",
-                   "data": {"metadata": {"reference": "ref1", "kind": "INSCRIPTION"}}}
+        payload = {"event": "order.paid", "data": {"orderId": "order_1", "reference": "ref1"}}
         self.assertEqual(self._post(payload).data["outcome"], "activated")
-        r = self._post(payload)  # rejoué
-        self.assertEqual(r.data["outcome"], "duplicate")
+        self.assertEqual(self._post(payload).data["outcome"], "duplicate")  # rejoué
         self.assertEqual(Subscription.objects.filter(user=self.user).count(), 1)
 
-    def test_order_failed_marks_echoue(self):
+    def test_order_failed_confirmed_by_provider_marks_echoue(self):
         make_pending(self.user)
-        r = self._post({"event": "order.failed", "data": {"metadata": {"reference": "ref1"}}})
+        self.get_order.return_value = swinmo_order("ref1", status="failed")
+        r = self._post({"event": "order.failed", "data": {"orderId": "order_1", "reference": "ref1"}})
         self.assertEqual(r.data["outcome"], "failed")
         self.assertEqual(Payment.objects.get(swinmo_ref="ref1").status, PaymentStatus.ECHOUE)
 
-    def test_order_paid_email_fallback_without_metadata(self):
-        """Sécurité renforcée (Albert df8ae92) : sans metadata reference et si
-        l'API Swinmo ne renvoie pas de résolution, on refuse l'activation
-        automatique par simple correspondance d'email (fraude possible)."""
-        from django.conf import settings
-        # On crée un paiement en attente
+    def test_webhook_without_reference_resolved_via_provider(self):
+        payment = make_pending(self.user, ref="api_ref_123")
+        self.get_order.return_value = swinmo_order("api_ref_123", order_id="order_api_999")
+        r = self._post({"event": "order.paid", "data": {"orderId": "order_api_999", "status": "PAID"}})
+        self.assertEqual(r.data["outcome"], "activated")
+        payment.refresh_from_db()
+        self.assertEqual((payment.status, payment.swinmo_ref, payment.provider_tx_id),
+                         (PaymentStatus.VALIDE, "api_ref_123", "order_api_999"))
+
+    def test_webhook_without_any_match_rejected(self):
+        """Sans référence et commande illisible chez Swinmo : pas de correspondance par
+        email (fraude possible) → rejet, paiement inchangé."""
         payment = make_pending(self.user, ref="original_ref")
-
-        # Payload sans metadata, mais avec email et productId
-        payload = {
-            "event": "order.paid",
-            "data": {
-                "orderId": "swinmo_order_id_123",
-                "transactionId": "FREE-123",
-                "amount": 0,
-                "currency": "XAF",
-                "customerEmail": self.user.email,
-                "productId": settings.SWINMO_PRODUCT_INSCRIPTION,
-                "status": "PAID"
-            }
-        }
-
-        r = self._post(payload)
-        self.assertEqual(r.status_code, 200)
-        # L'API Swinmo (SWINMO_SECRET_KEY test) renvoie 401 → pas de résolution
-        # possible → outcome=unknown-payment, paiement inchangé.
-        self.assertEqual(r.data["outcome"], "unknown-payment")
+        self.get_order.side_effect = swinmo.SwinmoError("401")
+        r = self._post({"event": "order.paid", "data": {"orderId": "swinmo_order_id_123",
+                                                        "customerEmail": self.user.email}})
+        self.assertEqual(r.status_code, 404)
         payment.refresh_from_db()
         self.assertEqual(payment.status, PaymentStatus.EN_ATTENTE)
-
-    @patch("apps.billing.swinmo.get_order_details")
-    def test_order_paid_resolves_via_api_if_metadata_missing(self, mock_get_details):
-        from django.conf import settings
-        # On crée un paiement en attente avec une référence spécifique
-        payment = make_pending(self.user, ref="api_ref_123")
-        
-        # Le mock de l'API Swinmo renvoie la référence dans metadata
-        mock_get_details.return_value = {
-            "success": True,
-            "data": {
-                "orderId": "order_api_999",
-                "status": "paid",
-                "amount": 10000,
-                "currency": "XAF",
-                "customerEmail": self.user.email,
-                "metadata": {"reference": "api_ref_123"}
-            }
-        }
-        
-        payload = {
-            "event": "order.paid",
-            "data": {
-                "orderId": "order_api_999",
-                "transactionId": "FREE-999",
-                "amount": 0,
-                "currency": "XAF",
-                "customerEmail": self.user.email,
-                "productId": settings.SWINMO_PRODUCT_INSCRIPTION,
-                "status": "PAID"
-            }
-        }
-        
-        r = self._post(payload)
-        self.assertEqual(r.status_code, 200)
-        self.assertEqual(r.data["outcome"], "activated")
-        
-        # Vérifie que le paiement a été validé
-        payment.refresh_from_db()
-        self.assertEqual(payment.status, PaymentStatus.VALIDE)
-        # Et la swinmo_ref est mise à jour avec l'orderId
-        self.assertEqual(payment.swinmo_ref, "order_api_999")
-        mock_get_details.assert_called_once_with("order_api_999")
 
 
 @override_settings(**TEST_SETTINGS)

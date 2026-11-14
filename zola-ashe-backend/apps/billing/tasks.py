@@ -16,6 +16,48 @@ def daily_status_check():
 
 
 @app.task
+def reconcile_pending_payments():
+    """Toutes les 10 min : revérifie chez Swinmo les paiements restés en attente."""
+    from .services import run_payment_reconciliation
+    return f"reconcile_pending_payments: {run_payment_reconciliation()}"
+
+
+@app.task
+def remind_unpaid_payments():
+    """Toutes les 5 min : relance des paiements abandonnés ou échoués (5 min → 7 j)."""
+    from .services import run_unpaid_reminders
+    return f"remind_unpaid_payments: {run_unpaid_reminders()}"
+
+
+@app.task
+def send_unpaid_payment_reminder(payment_id: int):
+    """Email de relance d'un paiement non finalisé."""
+    from django.utils.html import escape
+
+    from .models import Payment
+    from .services import unpaid_payment_label, unpaid_payment_url
+    payment = Payment.objects.select_related("user", "formation", "library_pdf").filter(pk=payment_id).first()
+    if payment is None:
+        return "paiement introuvable"
+    first_name = (payment.user.full_name or "").split()[0] if payment.user.full_name else ""
+    label, url = unpaid_payment_label(payment), unpaid_payment_url(payment)
+    amount = f"{payment.amount:,}".replace(",", " ")
+    plain = (f"Bonjour{' ' + first_name if first_name else ''},\n\n"
+             f"Votre paiement de {amount} FCFA pour {label} n'est pas finalisé.\n"
+             f"Vous pouvez le reprendre ici : {url}\n\n"
+             "Si vous avez déjà payé, ignorez ce message : votre accès s'ouvrira dès la confirmation.")
+    html = (f"<p>Bonjour{escape(' ' + first_name) if first_name else ''},</p>"
+            f"<p>Votre paiement de <strong>{amount} FCFA</strong> pour {escape(label)} n'est pas finalisé.</p>"
+            f'<p><a href="{escape(url)}">Reprendre mon paiement</a></p>'
+            "<p>Si vous avez déjà payé, ignorez ce message : votre accès s'ouvrira dès la confirmation.</p>")
+    msg = EmailMultiAlternatives(subject="ZOLA ASHÉ — Votre paiement n'est pas finalisé", body=plain,
+                                 from_email=settings.DEFAULT_FROM_EMAIL, to=[payment.user.email])
+    msg.attach_alternative(html, "text/html")
+    msg.send(fail_silently=False)
+    return f"unpaid reminder sent: {payment_id}"
+
+
+@app.task
 def send_confirmation_email(email: str, kind: str,
                              full_name: str = "", amount: int | None = None):
     """Envoie l'email de confirmation de paiement (HTML + texte brut)."""
@@ -27,6 +69,7 @@ def send_confirmation_email(email: str, kind: str,
         "BRANCHE_FEMME": "votre accès Branche Femme",
         "BRANCHE_ENFANT": "votre accès Branche Enfant",
         "FORMATION": "votre achat de formation",
+        "LIVRE": "votre achat de livre",
     }
     libelle = labels.get(kind, "votre paiement")
 

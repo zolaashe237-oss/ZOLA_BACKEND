@@ -54,7 +54,7 @@ export type UserStatus = "ACTIF" | "RESTREINT" | "BLOQUE";
 // ── Transactions / Historique des paiements ───────────────────────────────────
 
 export type PaymentStatus = "REUSSI" | "EN_ATTENTE" | "ECHOUE" | "REMBOURSE" | "EXONERE";
-export type PaymentKind   = "COTISATION" | "INSCRIPTION" | "DON" | "FORMATION" | "CADEAU" | "REMBOURSEMENT" | "EXONERATION";
+export type PaymentKind   = "COTISATION" | "INSCRIPTION" | "DON" | "FORMATION" | "LIVRE" | "CADEAU" | "REMBOURSEMENT" | "EXONERATION";
 export type PaymentMethod = "MTN_MOBILE_MONEY" | "ORANGE_MONEY" | "MANUEL" | "VIREMENT";
 
 export interface Transaction {
@@ -111,7 +111,7 @@ export interface MemberDetail extends User {
     billing?: string; tranches_paid?: number; tranches_total?: number;
   }[];
   payments: { id: number; type: string; status: string; amount: number; paid_at: string | null;
-              formation_title?: string | null }[];
+              formation_title?: string | null; library_pdf_title?: string | null }[];
   quiz_results: { quiz: number; title: string; score: number; validated: boolean }[];
   formations_progress?: {
     formation_id: number; formation_title: string;
@@ -121,6 +121,11 @@ export interface MemberDetail extends User {
   /** Formations achetées à l'unité (accès actif) */
   formation_purchases?: {
     formation_id: number; formation_title: string; purchased_at: string;
+    payment_id: number | null; amount: number | null; manual: boolean;
+  }[];
+  /** Livres de la bibliothèque achetés à l'unité (accès actif) */
+  library_purchases?: {
+    library_pdf_id: number; title: string; purchased_at: string;
     payment_id: number | null; amount: number | null; manual: boolean;
   }[];
 }
@@ -657,6 +662,8 @@ export interface LibraryPdf {
   linked_quiz_title?: string | null;
   /** Accessible gratuitement même si access_level est restreint */
   is_gratuit?: boolean;
+  /** Prix d'achat à l'unité (FCFA) pour les membres sans accès ; null = non vendu seul */
+  price?: number | null;
   created_at: string;
   updated_at: string;
 }

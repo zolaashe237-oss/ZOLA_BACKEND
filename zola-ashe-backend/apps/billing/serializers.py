@@ -4,7 +4,7 @@ from rest_framework import serializers
 from .models import Payment, Subscription
 
 PURCHASE_KINDS = ("INSCRIPTION", "COTISATION", "ANNUEL", "DON",
-                   "BRANCHE_FEMME", "BRANCHE_ENFANT", "FORMATION")
+                   "BRANCHE_FEMME", "BRANCHE_ENFANT", "FORMATION", "LIVRE")
 
 
 class SubscriptionSerializer(serializers.ModelSerializer):
@@ -32,11 +32,13 @@ class SubscriptionSerializer(serializers.ModelSerializer):
 
 class PaymentSerializer(serializers.ModelSerializer):
     formation_title = serializers.CharField(source="formation.title", read_only=True, default=None)
+    library_pdf_title = serializers.CharField(source="library_pdf.title", read_only=True, default=None)
 
     class Meta:
         model = Payment
         fields = ("id", "type", "status", "amount", "swinmo_ref", "reason",
-                  "subscription", "formation", "formation_title", "paid_at")
+                  "subscription", "formation", "formation_title",
+                  "library_pdf", "library_pdf_title", "paid_at")
         read_only_fields = fields
 
 
@@ -44,6 +46,7 @@ class InitiatePaymentSerializer(serializers.Serializer):
     kind = serializers.ChoiceField(choices=PURCHASE_KINDS)
     amount = serializers.IntegerField(required=False, min_value=1)  # don : montant libre
     formation_id = serializers.IntegerField(required=False)          # achat d'une formation
+    library_pdf_id = serializers.IntegerField(required=False)        # achat d'un livre
 
     def validate(self, attrs):
         from django.conf import settings
@@ -53,6 +56,8 @@ class InitiatePaymentSerializer(serializers.Serializer):
                 {"kind": "La cotisation mensuelle est désactivée : aucun paiement mensuel n'est requis."})
         if attrs["kind"] == "FORMATION":
             attrs["formation"] = self._purchasable_formation(attrs.get("formation_id"))
+        if attrs["kind"] == "LIVRE":
+            attrs["library_pdf"] = self._purchasable_library_pdf(attrs.get("library_pdf_id"))
         if attrs["kind"] == "DON":
             amount = attrs.get("amount")
             if not amount or amount < settings.DON_MIN_AMOUNT:
@@ -73,3 +78,17 @@ class InitiatePaymentSerializer(serializers.Serializer):
         if formation_accessible(self.context["request"].user, formation):
             raise serializers.ValidationError({"formation_id": "Vous avez déjà accès à cette formation."})
         return formation
+
+    def _purchasable_library_pdf(self, pdf_id):
+        from apps.content.models import LibraryPdf
+        from apps.content.services import library_pdf_accessible
+        if not pdf_id:
+            raise serializers.ValidationError({"library_pdf_id": "Livre requis."})
+        pdf = LibraryPdf.objects.filter(pk=pdf_id, is_active=True).first()
+        if pdf is None:
+            raise serializers.ValidationError({"library_pdf_id": "Livre introuvable."})
+        if not pdf.price:
+            raise serializers.ValidationError({"library_pdf_id": "Ce livre n'est pas proposé à l'achat."})
+        if library_pdf_accessible(self.context["request"].user, pdf):
+            raise serializers.ValidationError({"library_pdf_id": "Vous avez déjà accès à ce livre."})
+        return pdf

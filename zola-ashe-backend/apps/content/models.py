@@ -373,6 +373,8 @@ class LibraryPdf(models.Model):
     order = models.PositiveIntegerField(default=0, db_index=True)
     is_active = models.BooleanField(default=True)
     is_gratuit = models.BooleanField(default=False)
+    # Prix d'achat à l'unité (FCFA) pour les membres sans accès. NULL = non vendu seul.
+    price = models.PositiveIntegerField(null=True, blank=True)
     created_at = models.DateTimeField(auto_now_add=True)
     updated_at = models.DateTimeField(auto_now=True)
 
