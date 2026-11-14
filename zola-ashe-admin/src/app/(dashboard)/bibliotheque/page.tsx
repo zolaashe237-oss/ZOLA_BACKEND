@@ -226,6 +226,15 @@ function DocRow({ pdf, onEdit, onToggle, onToggleGratuit, onDelete, onPreview,
           }}>
             {ACCESS_ICON[pdf.access_level]} {ACCESS_LABEL[pdf.access_level]}
           </span>
+          {pdf.price && !pdf.is_gratuit && pdf.access_level !== "PUBLIC" ? (
+            <span style={{
+              fontSize: "0.63rem", fontWeight: 700, color: "#c9a227",
+              background: "rgba(201,162,39,0.10)", border: "1px solid rgba(201,162,39,0.30)",
+              padding: "0.04rem 0.38rem", borderRadius: 99,
+            }}>
+              {pdf.price.toLocaleString("fr-FR")} F
+            </span>
+          ) : null}
           {pdf.access_level !== "PUBLIC" && (
             <button
               type="button"
@@ -354,6 +363,7 @@ const EMPTY_FORM = {
   access_level: "MEMBRE" as PdfAccess, bucket_key: "", cover_key: "", cover_url: "",
   nb_pages: null as number | null, size_mo: null as number | null,
   is_active: true, is_gratuit: false, linked_quiz_id: null as number | null,
+  price: "",
 };
 
 function DocFormModal({ initial, editing, onClose, onSaved, onError }: {
@@ -453,7 +463,13 @@ function DocFormModal({ initial, editing, onClose, onSaved, onError }: {
   const submit = async (e: React.FormEvent) => {
     e.preventDefault(); setSaving(true);
     try {
-      const payload = { ...form, category: normalizeCategory(form.category) };
+      const payload = {
+        ...form,
+        category: normalizeCategory(form.category),
+        // Prix à l'unité : seulement pour un livre réservé et non gratuit.
+        price: form.access_level !== "PUBLIC" && !form.is_gratuit && Number(form.price) > 0
+          ? Number(form.price) : null,
+      };
       if (payload.cover_key) payload.cover_url = "";
       if (editing) await libraryApi.update(editing, payload);
       else         await libraryApi.create(payload);
@@ -624,6 +640,20 @@ function DocFormModal({ initial, editing, onClose, onSaved, onError }: {
             </label>
           )}
         </div>
+        {form.access_level !== "PUBLIC" && !form.is_gratuit && (
+          <div style={{ marginBottom: "1.1rem" }}>
+            <Input
+              label="Prix à l'unité (FCFA) — optionnel"
+              type="number" min={0} step={500} placeholder="Ex. 3000 — vide = réservé aux abonnés"
+              value={form.price}
+              onChange={(e) => setForm({ ...form, price: e.target.value })}
+              style={{ marginBottom: 0 }}
+            />
+            <p style={{ margin: "-0.5rem 0 0", fontSize: "0.72rem", color: "var(--muted-2)", lineHeight: 1.5 }}>
+              Les membres sans abonnement voient ce livre verrouillé et peuvent l&apos;acheter seul.
+            </p>
+          </div>
+        )}
         <div style={{ display: "flex", gap: "0.55rem" }}>
           <Button type="submit" loading={saving} disabled={!form.bucket_key && !editing}>
             {editing ? "Enregistrer" : "Ajouter"}
@@ -983,6 +1013,7 @@ export default function BibliothequePage() {
     is_active: editTarget.is_active,
     is_gratuit: editTarget.is_gratuit ?? false,
     linked_quiz_id: editTarget.linked_quiz_id ?? null,
+    price: editTarget.price ? String(editTarget.price) : "",
   } : { ...EMPTY_FORM };
 
   return (

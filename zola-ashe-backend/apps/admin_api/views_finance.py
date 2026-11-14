@@ -143,12 +143,19 @@ class ManualPaymentView(APIView):
             return Response({"detail": "Membre introuvable."}, status=status.HTTP_404_NOT_FOUND)
 
         formation = data.get("formation")
+        library_pdf = data.get("library_pdf")
         if formation is not None:
             from apps.billing.models import FormationPurchase
             if FormationPurchase.objects.filter(user=user, formation=formation).exists():
                 return Response({"detail": "Ce membre a déjà acheté cette formation."},
                                 status=status.HTTP_400_BAD_REQUEST)
             payment_type, amount = PaymentType.FORMATION, data["amount"]
+        elif library_pdf is not None:
+            from apps.billing.models import LibraryPdfPurchase
+            if LibraryPdfPurchase.objects.filter(user=user, library_pdf=library_pdf).exists():
+                return Response({"detail": "Ce membre a déjà acheté ce livre."},
+                                status=status.HTTP_400_BAD_REQUEST)
+            payment_type, amount = PaymentType.LIVRE, data["amount"]
         else:
             plan = resolve_plan(data["kind"])
             payment_type = plan.payment_type
@@ -156,12 +163,14 @@ class ManualPaymentView(APIView):
         # swinmo_ref = NULL (RG-06) ; on réutilise la logique d'activation métier.
         payment = Payment.objects.create(
             user=user, type=payment_type, status=PaymentStatus.EN_ATTENTE,
-            amount=amount, swinmo_ref=None, reason=data["reason"], formation=formation)
+            amount=amount, swinmo_ref=None, reason=data["reason"], formation=formation,
+            library_pdf=library_pdf)
         activate_paid_payment(payment, data["kind"])
         record(request.user, AuditAction.MANUAL_PAYMENT, target_type="Payment", target_id=payment.id,
                reason=data["reason"],
                payload={"kind": data["kind"], "amount": amount,
-                        "formation_id": formation.id if formation else None})
+                        "formation_id": formation.id if formation else None,
+                        "library_pdf_id": library_pdf.id if library_pdf else None})
         return Response({"payment_id": payment.id, "status": payment.status},
                         status=status.HTTP_201_CREATED)
 
@@ -189,6 +198,7 @@ class RefundView(APIView):
                                 status=status.HTTP_400_BAD_REQUEST)
 
         formation = original.formation if original and original.type == PaymentType.FORMATION else None
+        library_pdf = original.library_pdf if original and original.type == PaymentType.LIVRE else None
         revoke = data.get("revoke_access")
         if revoke is None:
             revoke = bool(original) and abs(data["amount"]) >= original.amount
@@ -198,17 +208,22 @@ class RefundView(APIView):
             payment = Payment.objects.create(
                 user=user, type=PaymentType.REMBOURSEMENT, status=PaymentStatus.VALIDE,
                 amount=-abs(data["amount"]), swinmo_ref=None, reason=data["reason"],
-                formation=formation)
-            # Achat de formation remboursé : l'accès à la formation est retiré.
+                formation=formation, library_pdf=library_pdf)
+            # Achat de formation / de livre remboursé : l'accès au contenu est retiré.
             if formation is not None and revoke:
                 from apps.billing.models import FormationPurchase
                 access_revoked = FormationPurchase.objects.filter(
                     user=user, formation=formation).delete()[0] > 0
+            if library_pdf is not None and revoke:
+                from apps.billing.models import LibraryPdfPurchase
+                access_revoked = LibraryPdfPurchase.objects.filter(
+                    user=user, library_pdf=library_pdf).delete()[0] > 0
         record(request.user, AuditAction.MANUAL_PAYMENT, target_type="Payment", target_id=payment.id,
                reason=data["reason"],
                payload={"refund": True, "amount": -abs(data["amount"]),
                         "refunded_payment_id": original.id if original else None,
                         "formation_id": formation.id if formation else None,
+                        "library_pdf_id": library_pdf.id if library_pdf else None,
                         "access_revoked": access_revoked})
         return Response({"payment_id": payment.id, "access_revoked": access_revoked},
                         status=status.HTTP_201_CREATED)

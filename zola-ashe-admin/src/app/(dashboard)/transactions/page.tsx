@@ -36,6 +36,7 @@ const KIND_LABEL: Record<PaymentKind, string> = {
   INSCRIPTION:  "Inscription",
   DON:          "Don",
   FORMATION:    "Formation",
+  LIVRE:        "Livre",
   CADEAU:       "Cadeau",
   REMBOURSEMENT:"Remboursement",
   EXONERATION:  "Exonération",
@@ -45,6 +46,7 @@ const KIND_COLOR: Record<PaymentKind, string> = {
   INSCRIPTION:  "#5fb98a",
   DON:          "#b5532a",
   FORMATION:    "#5b8fd4",
+  LIVRE:        "#8b5a2b",
   CADEAU:       "#d9a441",
   REMBOURSEMENT:"#7d7264",
   EXONERATION:  "#243a85",
@@ -248,6 +250,7 @@ export default function TransactionsPage() {
               <option value="INSCRIPTION">Inscription</option>
               <option value="DON">Don</option>
               <option value="FORMATION">Formation</option>
+              <option value="LIVRE">Livre</option>
               <option value="CADEAU">Cadeau</option>
               <option value="REMBOURSEMENT">Remboursement</option>
               <option value="EXONERATION">Exonération</option>

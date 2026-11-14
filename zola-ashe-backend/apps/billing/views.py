@@ -125,7 +125,8 @@ class InitiatePaymentView(generics.GenericAPIView):
         data = serializer.validated_data
         try:
             result = initiate_payment(request.user, data["kind"], data.get("amount"),
-                                      formation=data.get("formation"))
+                                      formation=data.get("formation"),
+                                      library_pdf=data.get("library_pdf"))
         except swinmo.SwinmoError as exc:
             return Response({"detail": f"Service de paiement indisponible. Réessayez plus tard. {exc}"},
                             status=status.HTTP_502_BAD_GATEWAY)
@@ -175,7 +176,7 @@ class PaymentStatusView(APIView):
         if not ref and not payment_id.isdigit():
             return Response({"detail": "Paramètre `ref` ou `payment_id` requis."},
                             status=status.HTTP_400_BAD_REQUEST)
-        mine = Payment.objects.filter(user=request.user).select_related("formation")
+        mine = Payment.objects.filter(user=request.user).select_related("formation", "library_pdf")
         payment = (mine.filter(swinmo_ref=ref).first() if ref else None) or \
                   (mine.filter(pk=int(payment_id)).first() if payment_id.isdigit() else None)
         if payment is None:
@@ -187,6 +188,8 @@ class PaymentStatusView(APIView):
             "amount": payment.amount,
             "formation_id": payment.formation_id,
             "formation_title": payment.formation.title if payment.formation else None,
+            "library_pdf_id": payment.library_pdf_id,
+            "library_pdf_title": payment.library_pdf.title if payment.library_pdf else None,
         })
 
 

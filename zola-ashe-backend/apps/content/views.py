@@ -151,15 +151,12 @@ class FormationViewSet(viewsets.ReadOnlyModelViewSet):
             # Visiteurs non connectés : uniquement les formations marquées publiques
             return qs.filter(is_public=True).distinct()
 
-        # Masquer les formations protégées des branches non accessibles.
-        # Les formations is_public=True restent visibles pour tous les membres connectés.
-        # Exception : les formations vendues à l'unité (ou déjà achetées) restent
-        # visibles pour pouvoir être achetées puis suivies.
-        from apps.billing.services import purchased_formation_ids
-        purchasable = Q(price__gt=0) | Q(pk__in=purchased_formation_ids(user))
-        for branch in ("MEMBRE", "FEMME", "ENFANT"):
-            if not _user_has_access_to_branch(user, branch):
-                qs = qs.exclude(Q(branch=branch, is_public=False) & ~purchasable)
+        from apps.accounts.models import UserStatus
+        if user.status == UserStatus.BLOQUE:
+            return qs.none()  # RG-10 : un compte bloqué ne voit rien
+        # Membre connecté : tout le catalogue publié est listé, y compris les formations
+        # hors abonnement — elles s'affichent verrouillées (« Acheter » si vendues seules,
+        # « Souscrire » sinon). L'accès au contenu reste contrôlé par formation_accessible.
         if self.action == "retrieve":
             qs = qs.prefetch_related(
                 "modules__courses__resources", "modules__courses__quiz__questions",
@@ -399,19 +396,33 @@ class LibraryPdfViewSet(viewsets.ReadOnlyModelViewSet):
     pagination_class   = None
 
     def get_queryset(self):
+        # Tous les livres actifs sont listés, y compris ceux hors abonnement : ils
+        # s'affichent verrouillés (avec leur prix s'ils sont vendus seuls). Le
+        # contenu reste protégé par `stream`.
         from django.db.models import Q
-        allowed = _allowed_access_levels(self.request.user)
-        qs = LibraryPdf.objects.filter(is_active=True, access_level__in=allowed).order_by("-created_at")
+        from apps.accounts.models import UserStatus
+        if self.request.user.status == UserStatus.BLOQUE:
+            return LibraryPdf.objects.none()  # RG-10
+        qs = LibraryPdf.objects.filter(is_active=True).order_by("-created_at")
         if branche := self.request.query_params.get("branche"):
             qs = qs.filter(branche=branche)
         if search := self.request.query_params.get("search"):
             qs = qs.filter(Q(title__icontains=search) | Q(description__icontains=search))
         return qs
 
+    def get_serializer_context(self):
+        ctx = super().get_serializer_context()
+        ctx["allowed_levels"] = _allowed_access_levels(self.request.user)
+        return ctx
+
     @action(detail=True, methods=["get"], url_path="stream")
     def stream(self, request, pk=None):
-        """URL signée (1h) du fichier PDF."""
+        """URL signée (1h) du fichier PDF — si le membre a accès au livre."""
+        from .services import library_pdf_accessible
         pdf = self.get_object()
+        if not library_pdf_accessible(request.user, pdf):
+            return Response({"detail": "Livre réservé.", "lock_reason": "subscription",
+                             "price": pdf.price}, status=status.HTTP_403_FORBIDDEN)
         if not pdf.bucket_key:
             return Response({"detail": "Aucun fichier attaché à ce document."},
                             status=status.HTTP_400_BAD_REQUEST)

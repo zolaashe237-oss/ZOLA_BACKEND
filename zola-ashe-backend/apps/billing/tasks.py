@@ -27,6 +27,7 @@ def send_confirmation_email(email: str, kind: str,
         "BRANCHE_FEMME": "votre accès Branche Femme",
         "BRANCHE_ENFANT": "votre accès Branche Enfant",
         "FORMATION": "votre achat de formation",
+        "LIVRE": "votre achat de livre",
     }
     libelle = labels.get(kind, "votre paiement")
 

@@ -32,9 +32,10 @@ class FormationPurchaseTests(APITestCase):
         return self.client.get(f"/api/formations/{formation.id}/")
 
     def test_priced_formation_visible_and_locked_before_purchase(self):
-        ids = [f["id"] for f in self.client.get("/api/formations/").json()]
-        self.assertIn(self.formation.id, ids)
-        self.assertNotIn(self.not_for_sale.id, ids)
+        listed = {f["id"]: f for f in self.client.get("/api/formations/").json()}
+        # Compte gratuit : tout le catalogue payant est affiché, verrouillé ; prix si vendue seule.
+        self.assertEqual((listed[self.formation.id]["locked"], listed[self.formation.id]["price"]), (True, 15000))
+        self.assertEqual((listed[self.not_for_sale.id]["locked"], listed[self.not_for_sale.id]["price"]), (True, None))
         data = self._detail(self.formation).json()
         self.assertEqual((data["locked"], data["lock_reason"], data["price"], data["purchased"]),
                          (True, "subscription", 15000, False))

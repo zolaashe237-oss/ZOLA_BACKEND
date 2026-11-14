@@ -84,23 +84,20 @@ class FormationAccessTests(APITestCase):
         return r.status_code, r.data["locked"]
 
     def test_reserved_active_member_only(self):
-        # ACTIF : formation MEMBRE visible + accessible
-        code, locked = self._fetch(self.actif, self.reserve)
-        self.assertEqual(code, 200)
-        self.assertFalse(locked)
-        # RESTREINT : branch MEMBRE exclue du queryset → 404
-        code, _ = self._fetch(self.restreint, self.reserve)
-        self.assertEqual(code, 404)
+        # ACTIF : formation « Payant » visible + accessible
+        self.assertEqual(self._fetch(self.actif, self.reserve), (200, False))
+        # RESTREINT (compte gratuit) : affichée mais verrouillée
+        self.assertEqual(self._fetch(self.restreint, self.reserve), (200, True))
 
-    def test_public_open_to_any_non_blocked(self):
-        # ACTIF : formation ouverte visible et accessible
-        code, locked = self._fetch(self.actif, self.public)
-        self.assertEqual(code, 200)
-        self.assertFalse(locked)
-        # RESTREINT : la formation "ouverte" a branch=MEMBRE par défaut → 404 aussi
-        # (nouveau contrat : la branch est un filtre top-niveau, indépendant de access_subscription_types)
-        code, _ = self._fetch(self.restreint, self.public)
-        self.assertEqual(code, 404)
+    def test_members_formation_reserved_to_active_members(self):
+        # « Membres » (types vides) : ouverte aux membres à jour seulement. Affichée au
+        # compte gratuit mais verrouillée — elle n'était protégée que par son masquage.
+        self.assertEqual(self._fetch(self.actif, self.public), (200, False))
+        self.assertEqual(self._fetch(self.restreint, self.public), (200, True))
+        self.client.force_authenticate(self.restreint)
+        course = Course.objects.create(module=Module.objects.create(formation=self.public, title="M"),
+                                       title="C", order=1)
+        self.assertEqual(self.client.post(f"/api/courses/{course.id}/complete/").status_code, 403)
 
     def test_blocked_no_access(self):
         # BLOQUE ne voit aucune formation (RG-10 : branch MEMBRE exclue, aucune access_level)
@@ -309,15 +306,14 @@ class BrancheContentAccessTests(APITestCase):
         stream = self.client.get(f"/api/library/{self.pdf_femme.id}/stream/")
         self.assertEqual(stream.status_code, 200)
 
-    def test_plain_member_does_not_see_femme_pdf(self):
+    def test_plain_member_sees_femme_pdf_locked(self):
         self.client.force_authenticate(self.plain_member)
         r = self.client.get("/api/library/")
-        titles = [item["title"] for item in r.data]
-        self.assertNotIn("Pdf femme", titles)
-        self.assertIn("Pdf public", titles)
-        # stream direct : 404 car le queryset filtre en amont
+        items = {item["title"]: item for item in r.data}
+        self.assertTrue(items["Pdf femme"]["locked"])      # affiché, verrouillé
+        self.assertFalse(items["Pdf public"]["locked"])
         stream = self.client.get(f"/api/library/{self.pdf_femme.id}/stream/")
-        self.assertEqual(stream.status_code, 404)
+        self.assertEqual(stream.status_code, 403)
 
     def test_femme_member_lists_femme_audio(self):
         self.client.force_authenticate(self.femme_member)
@@ -362,11 +358,16 @@ class AccessConsistencyAuditTests(APITestCase):
         LiveSession.objects.create(title="Live MEMBRE", start_at=timezone.now(),
                                    duration_minutes=60, branche="MEMBRE")
 
+    def _items(self, path):
+        data = self.client.get(path).data
+        return data["results"] if isinstance(data, dict) and "results" in data else data
+
     def _titles(self, path):
-        r = self.client.get(path)
-        data = r.data
-        items = data["results"] if isinstance(data, dict) and "results" in data else data
-        return [item["title"] for item in items]
+        return [item["title"] for item in self._items(path)]
+
+    def _locked(self, path):
+        """{titre: verrouillé ?} — formations et livres sont listés, verrouillés hors accès."""
+        return {item["title"]: item["locked"] for item in self._items(path)}
 
     def test_actif_femme_sees_all_femme_content(self):
         self.client.force_authenticate(self.actif_femme)
@@ -377,15 +378,16 @@ class AccessConsistencyAuditTests(APITestCase):
         self.assertIn(self.f_femme.title, formations)
         self.assertIn(self.f_membre.title, formations)
 
-    def test_restreint_femme_sees_no_femme_content_anywhere(self):
-        """Bug fixé : RESTREINT + branche payée perd cohéremment l'accès partout."""
+    def test_restreint_femme_has_no_femme_access_anywhere(self):
+        """RESTREINT + branche payée perd cohéremment l'accès partout (formations et
+        livres restent affichés, verrouillés ; audios et lives masqués)."""
         self.client.force_authenticate(self.restreint_femme)
-        self.assertNotIn("PDF FEMME", self._titles("/api/library/"))
+        self.assertTrue(self._locked("/api/library/")["PDF FEMME"])
         self.assertNotIn("Audio FEMME", self._titles("/api/audio/"))
         self.assertNotIn("Live FEMME", self._titles("/api/lives/"))
-        formations = self._titles("/api/formations/")
-        self.assertNotIn(self.f_femme.title, formations)
-        self.assertNotIn(self.f_membre.title, formations)  # perd aussi socle MEMBRE
+        formations = self._locked("/api/formations/")
+        self.assertTrue(formations[self.f_femme.title])
+        self.assertTrue(formations[self.f_membre.title])  # perd aussi le socle MEMBRE
 
     def test_bloque_femme_sees_nothing_even_with_branche(self):
         """Bug fixé : BLOQUE + branche ne doit rien voir des branches."""
@@ -397,15 +399,15 @@ class AccessConsistencyAuditTests(APITestCase):
         self.assertNotIn(self.f_femme.title, formations)
         self.assertNotIn(self.f_membre.title, formations)
 
-    def test_actif_without_branche_sees_membre_only(self):
+    def test_actif_without_branche_accesses_membre_only(self):
         self.client.force_authenticate(self.actif_plain)
-        self.assertNotIn("PDF FEMME", self._titles("/api/library/"))
+        self.assertTrue(self._locked("/api/library/")["PDF FEMME"])
         self.assertNotIn("Audio FEMME", self._titles("/api/audio/"))
         self.assertNotIn("Live FEMME", self._titles("/api/lives/"))
         self.assertIn("Live MEMBRE", self._titles("/api/lives/"))
-        formations = self._titles("/api/formations/")
-        self.assertNotIn(self.f_femme.title, formations)
-        self.assertIn(self.f_membre.title, formations)
+        formations = self._locked("/api/formations/")
+        self.assertTrue(formations[self.f_femme.title])
+        self.assertFalse(formations[self.f_membre.title])
 
     def test_anonymous_sees_only_public_formations(self):
         # is_public=True + branch=FEMME : la règle branche prime pour un anonyme (pas d'accès branche).

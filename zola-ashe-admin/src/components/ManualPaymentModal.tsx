@@ -3,14 +3,15 @@
 import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 
-import { financeApi, formationApi, plansApi } from "@/lib/endpoints";
-import type { Formation, PlanKind, SubscriptionPlan } from "@/lib/types";
+import { financeApi, formationApi, libraryApi, plansApi } from "@/lib/endpoints";
+import type { Formation, LibraryPdf, PlanKind, SubscriptionPlan } from "@/lib/types";
 import { Button, Input, Select, errorMessage } from "@/components/ui";
 import { Modal } from "@/components/Modal";
 import { useToast } from "@/components/Toast";
 
-/** Paiements validables à la main (WhatsApp, espèces…) — dont l'achat d'une formation seule. */
-type ManualKind = PlanKind | "FORMATION";
+/** Paiements validables à la main (WhatsApp, espèces…) — dont l'achat d'une formation ou d'un livre seul. */
+type ItemKind = "FORMATION" | "LIVRE";
+type ManualKind = PlanKind | ItemKind;
 
 const KIND_LABELS: Record<ManualKind, string> = {
   INSCRIPTION:    "Inscription annuelle",
@@ -19,10 +20,24 @@ const KIND_LABELS: Record<ManualKind, string> = {
   BRANCHE_ENFANT: "Accès Branche Enfant",
   DON:            "Don volontaire",
   FORMATION:      "Achat d'une formation",
+  LIVRE:          "Achat d'un livre",
 };
-const KINDS: ManualKind[] = ["INSCRIPTION", "COTISATION", "BRANCHE_FEMME", "BRANCHE_ENFANT", "FORMATION", "DON"];
+const KINDS: ManualKind[] = ["INSCRIPTION", "COTISATION", "BRANCHE_FEMME", "BRANCHE_ENFANT", "FORMATION", "LIVRE", "DON"];
+
+/** Contenu vendable à l'unité, ramené à une forme commune pour la sélection. */
+type Item = { id: number; title: string; price: number | null };
+
+const ITEM_TEXT: Record<ItemKind, { select: string; placeholder: string; notForSale: string; noun: string }> = {
+  FORMATION: { select: "Formation à débloquer", placeholder: "— Choisir une formation —",
+               notForSale: "non vendue seule", noun: "cette seule formation" },
+  LIVRE:     { select: "Livre à débloquer", placeholder: "— Choisir un livre —",
+               notForSale: "non vendu seul", noun: "ce seul livre" },
+};
 
 const asList = <T,>(data: T[] | { results?: T[] }): T[] => (Array.isArray(data) ? data : data.results ?? []);
+const isItemKind = (k: ManualKind): k is ItemKind => k === "FORMATION" || k === "LIVRE";
+// Vendus à l'unité d'abord, puis par titre.
+const byPriceThenTitle = (a: Item, b: Item) => Number(!!b.price) - Number(!!a.price) || a.title.localeCompare(b.title);
 
 export default function ManualPaymentModal({ userId, userName, onClose, onDone }: {
   userId: number;
@@ -30,12 +45,12 @@ export default function ManualPaymentModal({ userId, userName, onClose, onDone }
   onClose: () => void;
   onDone: () => void;
 }) {
-  const [kind,        setKind]        = useState<ManualKind>("INSCRIPTION");
-  const [amount,      setAmount]      = useState("");
-  const [plans,       setPlans]       = useState<SubscriptionPlan[]>([]);
-  const [formations,  setFormations]  = useState<Formation[]>([]);
-  const [formationId, setFormationId] = useState("");
-  const [loading,     setLoading]     = useState(false);
+  const [kind,    setKind]    = useState<ManualKind>("INSCRIPTION");
+  const [amount,  setAmount]  = useState("");
+  const [plans,   setPlans]   = useState<SubscriptionPlan[]>([]);
+  const [items,   setItems]   = useState<Partial<Record<ItemKind, Item[]>>>({});
+  const [itemId,  setItemId]  = useState("");
+  const [loading, setLoading] = useState(false);
   const { toast } = useToast();
 
   useEffect(() => {
@@ -44,34 +59,41 @@ export default function ManualPaymentModal({ userId, userName, onClose, onDone }
       .catch(() => {});
   }, []);
 
-  // Formations payantes (seules à verrouiller l'accès) : celles vendues à l'unité d'abord.
+  // Contenus réservés (seuls à verrouiller l'accès), chargés à la première sélection du type.
   useEffect(() => {
-    if (kind !== "FORMATION" || formations.length) return;
-    formationApi.list()
-      .then(({ data }) => setFormations(
-        asList<Formation>(data)
+    if (!isItemKind(kind) || items[kind]) return;
+    const load: Promise<Item[]> = kind === "FORMATION"
+      ? formationApi.list().then(({ data }) => asList<Formation>(data)
           .filter((f) => !f.is_public && f.access_subscription_types.length > 0)
-          .sort((a, b) => Number(!!b.price) - Number(!!a.price) || a.title.localeCompare(b.title)),
-      ))
+          .map((f) => ({ id: f.id, title: f.title, price: f.price ?? null })))
+      : libraryApi.list().then(({ data }) => asList<LibraryPdf>(data)
+          .filter((p) => p.access_level !== "PUBLIC" && !p.is_gratuit)
+          .map((p) => ({ id: p.id, title: p.title, price: p.price ?? null })));
+    load
+      .then((list) => setItems((prev) => ({ ...prev, [kind]: list.sort(byPriceThenTitle) })))
       .catch((e) => toast(errorMessage(e), "error"));
-  }, [kind, formations.length, toast]);
+  }, [kind, items, toast]);
 
-  const selectedFormation = formations.find((f) => String(f.id) === formationId);
+  const itemKind = isItemKind(kind) ? kind : null;
+  const selectedItem = itemKind ? items[itemKind]?.find((i) => String(i.id) === itemId) : undefined;
 
-  // Montant pré-rempli : prix du plan, ou prix de la formation choisie.
+  // Changer de type de paiement réinitialise le contenu choisi.
+  const changeKind = (k: ManualKind) => { setKind(k); setItemId(""); };
+
+  // Montant pré-rempli : prix du plan, ou prix du contenu choisi.
   useEffect(() => {
-    if (kind === "FORMATION") {
-      setAmount(selectedFormation?.price ? String(selectedFormation.price) : "");
+    if (itemKind) {
+      setAmount(selectedItem?.price ? String(selectedItem.price) : "");
     } else {
       const plan = plans.find((p) => p.kind === kind);
       setAmount(plan ? String(plan.price_total) : "");
     }
-  }, [kind, plans, selectedFormation]);
+  }, [kind, itemKind, plans, selectedItem]);
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (kind === "FORMATION" && !selectedFormation) {
-      toast("Choisissez la formation à débloquer.", "error");
+    if (itemKind && !selectedItem) {
+      toast(`Choisissez ${itemKind === "FORMATION" ? "la formation" : "le livre"} à débloquer.`, "error");
       return;
     }
     setLoading(true);
@@ -80,9 +102,10 @@ export default function ManualPaymentModal({ userId, userName, onClose, onDone }
         user_id: userId,
         kind,
         amount:  amount ? Number(amount) : undefined,
-        formation_id: kind === "FORMATION" ? selectedFormation?.id : undefined,
-        reason:  kind === "FORMATION"
-          ? `Paiement manuel — Formation « ${selectedFormation?.title} »`
+        formation_id:   kind === "FORMATION" ? selectedItem?.id : undefined,
+        library_pdf_id: kind === "LIVRE" ? selectedItem?.id : undefined,
+        reason:  itemKind
+          ? `Paiement manuel — ${itemKind === "FORMATION" ? "Formation" : "Livre"} « ${selectedItem?.title} »`
           : `Paiement manuel — ${KIND_LABELS[kind]}`,
       });
       onDone(); onClose();
@@ -91,8 +114,8 @@ export default function ManualPaymentModal({ userId, userName, onClose, onDone }
   };
 
   const activePlan = plans.find((p) => p.kind === kind);
-  const amountLabel = kind === "FORMATION"
-    ? (selectedFormation?.price ? "Montant (FCFA) — prix de la formation" : "Montant encaissé (FCFA)")
+  const amountLabel = itemKind
+    ? (selectedItem?.price ? "Montant (FCFA) — prix de vente" : "Montant encaissé (FCFA)")
     : (activePlan ? "Montant (FCFA) — pré-rempli depuis le plan" : "Montant (FCFA)");
 
   return (
@@ -120,7 +143,7 @@ export default function ManualPaymentModal({ userId, userName, onClose, onDone }
                 }}>
                   <div style={{ display: "flex", alignItems: "center", gap: "0.5rem" }}>
                     <input type="radio" name="kind" value={k} checked={active}
-                      onChange={() => setKind(k)} style={{ accentColor: "var(--gold-2)" }} />
+                      onChange={() => changeKind(k)} style={{ accentColor: "var(--gold-2)" }} />
                     <span style={{ fontSize: "0.84rem", fontWeight: active ? 700 : 400, color: active ? "var(--gold-2)" : "var(--ink)" }}>
                       {KIND_LABELS[k]}
                     </span>
@@ -132,13 +155,13 @@ export default function ManualPaymentModal({ userId, userName, onClose, onDone }
           </div>
         </div>
 
-        {kind === "FORMATION" && (
-          <Select label="Formation à débloquer" value={formationId} required
-                  onChange={(e) => setFormationId(e.target.value)}>
-            <option value="">— Choisir une formation —</option>
-            {formations.map((f) => (
-              <option key={f.id} value={f.id}>
-                {f.title}{f.price ? ` — ${f.price.toLocaleString("fr-FR")} FCFA` : " — non vendue seule"}
+        {itemKind && (
+          <Select label={ITEM_TEXT[itemKind].select} value={itemId} required
+                  onChange={(e) => setItemId(e.target.value)}>
+            <option value="">{ITEM_TEXT[itemKind].placeholder}</option>
+            {(items[itemKind] ?? []).map((i) => (
+              <option key={i.id} value={i.id}>
+                {i.title}{i.price ? ` — ${i.price.toLocaleString("fr-FR")} FCFA` : ` — ${ITEM_TEXT[itemKind].notForSale}`}
               </option>
             ))}
           </Select>
@@ -147,12 +170,12 @@ export default function ManualPaymentModal({ userId, userName, onClose, onDone }
         <Input
           label={amountLabel}
           type="number" min={0} value={amount} placeholder="Montant en FCFA"
-          required={kind === "FORMATION" && !selectedFormation?.price}
+          required={!!itemKind && !selectedItem?.price}
           onChange={(e) => setAmount(e.target.value)}
         />
-        {kind === "FORMATION" && (
+        {itemKind && (
           <p style={{ margin: "-0.4rem 0 1rem", fontSize: "0.74rem", color: "var(--muted-2)", lineHeight: 1.5 }}>
-            Le membre obtient un accès permanent à cette seule formation, sans abonnement.
+            Le membre obtient un accès permanent à {ITEM_TEXT[itemKind].noun}, sans abonnement.
           </p>
         )}
         <div style={{ display: "flex", gap: ".5rem", justifyContent: "flex-end" }}>

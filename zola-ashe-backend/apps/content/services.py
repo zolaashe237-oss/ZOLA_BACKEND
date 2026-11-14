@@ -168,8 +168,11 @@ def formation_accessible(user, formation: Formation, accessible_types=None) -> b
 
     Visiteur non connecté : seulement si `formation.is_public`. BLOQUÉ : jamais (RG-10).
     Sinon, dans l'ordre : formation publique ou achetée à l'unité → oui ; branche
-    Femme/Enfant non détenue → non ; `access_subscription_types` vide (« Membres »)
-    → oui ; sinon abonnement actif de l'UN des types requis.
+    Femme/Enfant non détenue → non ; sinon il faut un compte ACTIF (abonnement à
+    jour), que la formation soit en accès « Membres » (types vides) ou « Payant ».
+
+    Le catalogue étant listé en entier aux comptes connectés (formations verrouillées
+    affichées), c'est ce contrôle — et non le masquage — qui protège le contenu.
     """
     if not getattr(user, "is_authenticated", False):
         return bool(formation.is_public)
@@ -192,10 +195,35 @@ def formation_accessible(user, formation: Formation, accessible_types=None) -> b
         return False
     required = formation.access_subscription_types or []
     if not required:
-        return True  # formation « Membres » : tout membre connecté
+        return user.status == UserStatus.ACTIF  # « Membres » : réservé aux membres à jour
     if accessible_types is not None:
         return any(t in accessible_types for t in required)
     return any(has_subscription_access(user, t) for t in required)
+
+
+# ─── Accès à un livre de la bibliothèque ─────────────────────────────────────
+
+def library_pdf_accessible(user, pdf, allowed_levels=None) -> bool:
+    """Le membre peut-il lire ce livre ?
+
+    Oui si le livre est public ou marqué gratuit, si son niveau d'accès est couvert
+    par l'abonnement (MEMBRE / FEMME / ENFANT), ou s'il l'a acheté à l'unité.
+    BLOQUÉ : jamais. `allowed_levels` évite de le recalculer pour chaque livre.
+    """
+    from apps.accounts.models import UserStatus
+    if not getattr(user, "is_authenticated", False):
+        return pdf.access_level == "PUBLIC"
+    if user.status == UserStatus.BLOQUE:
+        return False
+    if pdf.access_level == "PUBLIC" or pdf.is_gratuit:
+        return True
+    if allowed_levels is None:
+        from .views import _allowed_access_levels
+        allowed_levels = _allowed_access_levels(user)
+    if pdf.access_level in allowed_levels:
+        return True
+    from apps.billing.services import has_purchased_library_pdf
+    return has_purchased_library_pdf(user, pdf)
 
 
 # ─── Déblocage séquentiel & complétion (RG-16, RG-26, RG-28) ────────────────

@@ -20,6 +20,7 @@ class PaymentType(models.TextChoices):
     BRANCHE_ENFANT = "BRANCHE_ENFANT", "Accès espace Enfant"
     DON            = "DON",            "Don volontaire"
     FORMATION      = "FORMATION",      "Achat d'une formation"
+    LIVRE          = "LIVRE",          "Achat d'un livre"
     REMBOURSEMENT  = "REMBOURSEMENT",  "Remboursement"
 
 
@@ -60,6 +61,9 @@ class Payment(models.Model):
     # Formation achetée (type=FORMATION uniquement).
     formation = models.ForeignKey(
         "content.Formation", on_delete=models.SET_NULL, null=True, blank=True, related_name="payments")
+    # Livre (PDF de la bibliothèque) acheté (type=LIVRE uniquement).
+    library_pdf = models.ForeignKey(
+        "content.LibraryPdf", on_delete=models.SET_NULL, null=True, blank=True, related_name="payments")
     paid_at = models.DateTimeField(auto_now_add=True)
 
     class Meta:
@@ -110,3 +114,17 @@ class SubscriptionPlan(models.Model):
 
     def __str__(self):
         return f"{self.name} ({self.kind})"
+
+
+class LibraryPdfPurchase(models.Model):
+    """Accès permanent à un livre (PDF de la bibliothèque) acheté à l'unité."""
+    user = models.ForeignKey("accounts.User", on_delete=models.CASCADE, related_name="library_purchases")
+    library_pdf = models.ForeignKey("content.LibraryPdf", on_delete=models.CASCADE, related_name="purchases")
+    payment = models.ForeignKey(Payment, on_delete=models.SET_NULL, null=True, blank=True,
+                                related_name="library_purchases")
+    created_at = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        db_table = "library_pdf_purchases"
+        constraints = [models.UniqueConstraint(fields=["user", "library_pdf"],
+                                               name="uniq_library_pdf_purchase")]

@@ -36,10 +36,12 @@ const PAY_LABEL: Record<string, string> = {
 const PAY_TYPE_LABEL: Record<string, string> = {
   INSCRIPTION: "Inscription", COTISATION: "Cotisation mensuelle", ANNUEL: "Cotisation annuelle",
   BRANCHE_FEMME: "Branche Femme", BRANCHE_ENFANT: "Branche Enfant", DON: "Don",
-  FORMATION: "Formation", REMBOURSEMENT: "Remboursement",
+  FORMATION: "Formation", LIVRE: "Livre", REMBOURSEMENT: "Remboursement",
 };
-const payTypeLabel = (p: { type: string; formation_title?: string | null }) =>
-  p.formation_title ? `${PAY_TYPE_LABEL[p.type] ?? p.type} · ${p.formation_title}` : (PAY_TYPE_LABEL[p.type] ?? p.type);
+const payTypeLabel = (p: { type: string; formation_title?: string | null; library_pdf_title?: string | null }) => {
+  const item = p.formation_title || p.library_pdf_title;
+  return item ? `${PAY_TYPE_LABEL[p.type] ?? p.type} · ${item}` : (PAY_TYPE_LABEL[p.type] ?? p.type);
+};
 
 const BILLING_LABEL: Record<string, string> = {
   ANNUEL: "Annuel", TRANCHES: "Par tranches", MENSUEL: "Mensuel",
@@ -203,11 +205,15 @@ function EditBranchesModal({ member, onClose, onSaved }: {
 
 function RefundPaymentModal({ memberId, payment, onClose, onDone }: {
   memberId: number;
-  payment: { id: number; type: string; amount: number; paid_at: string | null; formation_title?: string | null };
+  payment: { id: number; type: string; amount: number; paid_at: string | null;
+             formation_title?: string | null; library_pdf_title?: string | null };
   onClose: () => void;
   onDone: (accessRevoked: boolean) => void;
 }) {
-  const isFormation = payment.type === "FORMATION";
+  // Achat d'un contenu à l'unité (formation ou livre) : l'accès peut être retiré.
+  const isFormation = payment.type === "FORMATION" || payment.type === "LIVRE";
+  const itemNoun = payment.type === "LIVRE" ? "au livre" : "à la formation";
+  const itemTitle = payment.formation_title || payment.library_pdf_title;
   const [amount,  setAmount]  = useState(String(payment.amount));
   const [revoke,  setRevoke]  = useState(true);
   const [loading, setLoading] = useState(false);
@@ -235,7 +241,7 @@ function RefundPaymentModal({ memberId, payment, onClose, onDone }: {
         <div style={{ color: "var(--muted)" }}>
           Cette opération crée un remboursement enregistré dans l&apos;historique.{" "}
           {isFormation
-            ? "Pour un achat de formation, vous pouvez retirer l'accès ci-dessous."
+            ? "Pour un achat à l'unité, vous pouvez retirer l'accès ci-dessous."
             : "Elle n'affecte pas les accès branches du membre."}
         </div>
       </div>
@@ -257,7 +263,7 @@ function RefundPaymentModal({ memberId, payment, onClose, onDone }: {
             <input type="checkbox" checked={revoke} onChange={(e) => setRevoke(e.target.checked)}
                    style={{ accentColor: "var(--bad)", marginTop: ".15rem" }} />
             <span>
-              Retirer l&apos;accès à la formation{payment.formation_title ? ` « ${payment.formation_title} »` : ""}
+              Retirer l&apos;accès {itemNoun}{itemTitle ? ` « ${itemTitle} »` : ""}
               <span style={{ display: "block", fontSize: ".74rem", color: "var(--muted-2)" }}>
                 Décochez pour un geste commercial : le membre garde la formation.
               </span>
@@ -643,6 +649,46 @@ export default function MemberDetailPage() {
           <p style={{ margin: ".75rem 0 0", fontSize: ".76rem", color: "var(--muted-2)" }}>
             Pour retirer un accès, remboursez le paiement correspondant dans l&apos;historique ci-dessous.
           </p>
+        </Card>
+      )}
+
+      {/* ── Livres achetés à l'unité ── */}
+      {(member.library_purchases ?? []).length > 0 && (
+        <Card style={{ marginBottom: "1rem" }}>
+          <h2 style={{ fontSize: "1rem", marginBottom: ".9rem" }}>
+            Livres achetés
+            <span style={{ fontWeight: 400, color: "var(--muted)", fontSize: ".82rem", marginLeft: ".5rem" }}>
+              (accès sans abonnement)
+            </span>
+          </h2>
+          <table>
+            <thead>
+              <tr>
+                <th>Livre</th>
+                <th style={{ textAlign: "right" }}>Montant</th>
+                <th>Date</th>
+                <th>Paiement</th>
+              </tr>
+            </thead>
+            <tbody>
+              {member.library_purchases!.map((lp) => (
+                <tr key={lp.library_pdf_id}>
+                  <td style={{ fontWeight: 600, fontSize: ".86rem" }}>{lp.title}</td>
+                  <td style={{ textAlign: "right", fontWeight: 700, fontSize: ".86rem" }}>
+                    {lp.amount != null ? fmtAmt(lp.amount) : "—"}
+                  </td>
+                  <td style={{ color: "var(--muted)", fontSize: ".83rem" }}>{fmt(lp.purchased_at)}</td>
+                  <td>
+                    {lp.payment_id
+                      ? <Badge color={lp.manual ? "var(--warn)" : "var(--ok)"}>
+                          {lp.manual ? "Validé manuellement" : "En ligne"} · #{lp.payment_id}
+                        </Badge>
+                      : <span style={{ color: "var(--muted-2)", fontSize: ".8rem" }}>—</span>}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
         </Card>
       )}
 

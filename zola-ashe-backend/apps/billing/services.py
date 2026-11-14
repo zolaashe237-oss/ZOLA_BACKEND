@@ -20,6 +20,7 @@ from apps.accounts.models import Role, User, UserStatus
 from . import swinmo
 from .models import (
     FormationPurchase,
+    LibraryPdfPurchase,
     Payment,
     PaymentStatus,
     PaymentType,
@@ -65,9 +66,25 @@ def has_purchased_formation(user, formation) -> bool:
     return formation.pk in purchased_formation_ids(user)
 
 
+def purchased_library_pdf_ids(user) -> set[int]:
+    """Livres achetés à l'unité par le membre (mémorisé sur l'objet user, par requête)."""
+    if not getattr(user, "is_authenticated", False):
+        return set()
+    cached = getattr(user, "_purchased_library_pdf_ids", None)
+    if cached is None:
+        cached = set(LibraryPdfPurchase.objects.filter(user=user).values_list("library_pdf_id", flat=True))
+        user._purchased_library_pdf_ids = cached
+    return cached
+
+
+def has_purchased_library_pdf(user, pdf) -> bool:
+    return pdf.pk in purchased_library_pdf_ids(user)
+
+
 def forget_purchased_formations(user) -> None:
-    """Invalide le cache des achats porté par cette instance utilisateur."""
+    """Invalide le cache des achats (formations et livres) porté par cette instance utilisateur."""
     user.__dict__.pop("_purchased_formation_ids", None)
+    user.__dict__.pop("_purchased_library_pdf_ids", None)
 
 
 # ─── Catalogue des paiements (kind → tarif/produit Swinmo) ──────────────────
@@ -118,18 +135,20 @@ def resolve_plan(kind: str) -> Plan:
 
 # ─── Initiation d'un paiement (création du lien Swinmo) ─────────────────────
 
-def initiate_payment(user, kind: str, amount: int | None = None, formation=None) -> dict:
+def initiate_payment(user, kind: str, amount: int | None = None, formation=None,
+                     library_pdf=None) -> dict:
     """Crée un PAYMENTS EN_ATTENTE et le lien de paiement Swinmo.
 
     Notre `reference` interne (UUID) est stockée dans `swinmo_ref` et renvoyée
     dans le `metadata` Swinmo → réconciliation et idempotence au webhook (RG-08).
     Pour un don, `amount` (libre) prime sur le montant plancher du plan. Pour un
-    achat de formation, le montant est le prix de la `formation` fixé par l'admin.
+    achat de formation ou de livre, le montant est le prix fixé par l'admin.
     """
-    if kind == "FORMATION":
+    if kind in ("FORMATION", "LIVRE"):
         product_id = (getattr(settings, "SWINMO_PRODUCT_FORMATION", "")
                       or settings.SWINMO_PRODUCT_INSCRIPTION)
-        plan = Plan("FORMATION", product_id, formation.price, PaymentType.FORMATION, None)
+        item = formation if kind == "FORMATION" else library_pdf
+        plan = Plan(kind, product_id, item.price, PaymentType(kind), None)
     else:
         plan = resolve_plan(kind)
     effective_amount = amount if (kind == "DON" and amount) else plan.amount
@@ -142,6 +161,7 @@ def initiate_payment(user, kind: str, amount: int | None = None, formation=None)
         amount=effective_amount,
         swinmo_ref=reference,
         formation=formation if kind == "FORMATION" else None,
+        library_pdf=library_pdf if kind == "LIVRE" else None,
     )
 
     # Mode MOCK (aucune clé Swinmo) : on renvoie une page de paiement simulé du
@@ -155,6 +175,8 @@ def initiate_payment(user, kind: str, amount: int | None = None, formation=None)
     metadata = {"reference": reference, "user_id": user.id, "kind": kind}
     if kind == "FORMATION":
         metadata["formation_id"] = formation.id
+    elif kind == "LIVRE":
+        metadata["library_pdf_id"] = library_pdf.id
     
     logger.info(f"[Swinmo] Initiation paiement pour user={user.id}, kind={kind}, amount={effective_amount}")
     
@@ -299,6 +321,13 @@ def activate_paid_payment(payment: Payment, kind: str) -> None:
                 user=user, formation_id=payment.formation_id, defaults={"payment": payment})
             forget_purchased_formations(user)
 
+    elif kind == "LIVRE":
+        # Achat à l'unité : accès permanent à ce seul livre.
+        if payment.library_pdf_id:
+            LibraryPdfPurchase.objects.get_or_create(
+                user=user, library_pdf_id=payment.library_pdf_id, defaults={"payment": payment})
+            forget_purchased_formations(user)
+
     elif kind == "BRANCHE_FEMME":
         levels = list(user.access_levels or [])
         if "FEMME" not in levels:
@@ -317,7 +346,7 @@ def activate_paid_payment(payment: Payment, kind: str) -> None:
     _send_confirmation(user.email, kind, full_name=user.full_name, amount=payment.amount)
     _create_payment_notification(user, kind, payment.amount)
     # Parrainage : valide la commission du parrain au premier abonnement du filleul.
-    if kind not in ("DON", "FORMATION"):
+    if kind not in ("DON", "FORMATION", "LIVRE"):
         try:
             from apps.affiliate.services import validate_referral
             validate_referral(user)
@@ -342,6 +371,7 @@ def _create_payment_notification(user, kind: str, amount: int) -> None:
             "BRANCHE_FEMME":  "Branche Femme",
             "BRANCHE_ENFANT": "Branche Enfant",
             "FORMATION":      "Achat de formation",
+            "LIVRE":          "Achat de livre",
         }
         label = labels.get(kind, kind)
         Notification.objects.create(

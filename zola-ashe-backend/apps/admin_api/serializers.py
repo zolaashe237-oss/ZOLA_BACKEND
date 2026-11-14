@@ -38,6 +38,7 @@ class MemberDetailSerializer(serializers.ModelSerializer):
     quiz_results = serializers.SerializerMethodField()
     formations_progress = serializers.SerializerMethodField()
     formation_purchases = serializers.SerializerMethodField()
+    library_purchases = serializers.SerializerMethodField()
     password = serializers.CharField(write_only=True, required=False)
 
     class Meta:
@@ -45,7 +46,7 @@ class MemberDetailSerializer(serializers.ModelSerializer):
         fields = ("id", "email", "full_name", "photo", "role", "status",
                   "status_changed_at", "email_verified", "nb_warnings",
                   "created_at", "last_login", "subscriptions", "payments", "quiz_results",
-                  "formations_progress", "formation_purchases", "phone", "country",
+                  "formations_progress", "formation_purchases", "library_purchases", "phone", "country",
                   "access_levels", "password")
         read_only_fields = ("id", "status_changed_at", "created_at", "last_login", "nb_warnings")
 
@@ -68,6 +69,19 @@ class MemberDetailSerializer(serializers.ModelSerializer):
             "payment_id": p.payment_id,
             "amount": p.payment.amount if p.payment else None,
             # Pas de référence Swinmo → validé à la main par un admin (WhatsApp, espèces…).
+            "manual": bool(p.payment and not p.payment.swinmo_ref),
+        } for p in purchases]
+
+    @extend_schema_field(OpenApiTypes.OBJECT)
+    def get_library_purchases(self, obj):
+        """Livres achetés à l'unité (accès actif), avec le paiement qui les a ouverts."""
+        purchases = obj.library_purchases.select_related("library_pdf", "payment").order_by("-created_at")
+        return [{
+            "library_pdf_id": p.library_pdf_id,
+            "title": p.library_pdf.title,
+            "purchased_at": p.created_at,
+            "payment_id": p.payment_id,
+            "amount": p.payment.amount if p.payment else None,
             "manual": bool(p.payment and not p.payment.swinmo_ref),
         } for p in purchases]
 
@@ -142,25 +156,32 @@ class ReasonSerializer(serializers.Serializer):
 class ManualPaymentSerializer(serializers.Serializer):
     user_id = serializers.IntegerField()
     kind = serializers.ChoiceField(choices=["INSCRIPTION", "COTISATION", "ANNUEL", "DON",
-                                            "BRANCHE_FEMME", "BRANCHE_ENFANT", "FORMATION"])
+                                            "BRANCHE_FEMME", "BRANCHE_ENFANT", "FORMATION", "LIVRE"])
     amount = serializers.IntegerField(required=False, min_value=0)
     reason = serializers.CharField(max_length=255)
-    # Achat d'une formation réglé hors ligne (ex. WhatsApp) : formation à débloquer.
+    # Achat d'une formation / d'un livre réglé hors ligne (ex. WhatsApp) : contenu à débloquer.
     formation_id = serializers.IntegerField(required=False)
+    library_pdf_id = serializers.IntegerField(required=False)
 
     def validate(self, attrs):
-        if attrs["kind"] != "FORMATION":
+        if attrs["kind"] == "FORMATION":
+            from apps.content.models import Formation
+            item = Formation.objects.filter(pk=attrs.get("formation_id")).first()
+            field, label, key = "formation_id", "Formation", "formation"
+        elif attrs["kind"] == "LIVRE":
+            from apps.content.models import LibraryPdf
+            item = LibraryPdf.objects.filter(pk=attrs.get("library_pdf_id")).first()
+            field, label, key = "library_pdf_id", "Livre", "library_pdf"
+        else:
             return attrs
-        from apps.content.models import Formation
-        formation = Formation.objects.filter(pk=attrs.get("formation_id")).first()
-        if formation is None:
-            raise serializers.ValidationError({"formation_id": "Formation à débloquer requise."})
+        if item is None:
+            raise serializers.ValidationError({field: f"{label} à débloquer requis(e)."})
         if attrs.get("amount") is None:
-            if not formation.price:
+            if not item.price:
                 raise serializers.ValidationError(
-                    {"amount": "Cette formation n'a pas de prix : indiquez le montant encaissé."})
-            attrs["amount"] = formation.price
-        attrs["formation"] = formation
+                    {"amount": f"{label} sans prix : indiquez le montant encaissé."})
+            attrs["amount"] = item.price
+        attrs[key] = item
         return attrs
 
 
@@ -419,7 +440,8 @@ class TransactionSerializer(serializers.ModelSerializer):
     payment_method = serializers.SerializerMethodField()
     reference = serializers.CharField(source="swinmo_ref", read_only=True)
     created_at = serializers.DateTimeField(source="paid_at", read_only=True)
-    formation_title = serializers.CharField(source="formation.title", read_only=True, default=None)
+    # Titre du contenu acheté : formation ou livre.
+    formation_title = serializers.SerializerMethodField()
 
     class Meta:
         model = Payment
@@ -428,6 +450,10 @@ class TransactionSerializer(serializers.ModelSerializer):
             "amount", "currency", "payment_method", "reference", "reason",
             "formation_title", "paid_at", "created_at"
         )
+
+    def get_formation_title(self, obj) -> str | None:
+        item = obj.formation or obj.library_pdf
+        return item.title if item else None
 
     def get_status(self, obj) -> str:
         if obj.status == PaymentStatus.VALIDE:
@@ -542,7 +568,7 @@ class AdminLibraryPdfSerializer(serializers.ModelSerializer):
         model = LibraryPdf
         fields = ("id", "title", "description", "category", "branche", "access_level",
                   "bucket_key", "file_url", "cover_key", "cover_url", "nb_pages", "size_mo",
-                  "order", "is_active", "is_gratuit", "created_at", "updated_at")
+                  "order", "is_active", "is_gratuit", "price", "created_at", "updated_at")
         read_only_fields = ("id", "created_at", "updated_at")
 
     def get_file_url(self, obj) -> str | None:
