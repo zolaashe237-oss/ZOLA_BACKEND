@@ -24,6 +24,11 @@ app.conf.beat_schedule = {
         "task": "apps.admin_api.tasks.monthly_financial_report",
         "schedule": crontab(hour=6, minute=0, day_of_month=1),
     },
+    # Réconciliation des paiements restés en attente (webhook perdu) — toutes les 10 min.
+    "reconcile-pending-payments": {
+        "task": "apps.billing.tasks.reconcile_pending_payments",
+        "schedule": crontab(minute="*/10"),
+    },
     # Publication des formations programmées — toutes les minutes (§5.4).
     "publish-scheduled-formations": {
         "task": "apps.content.tasks.publish_scheduled_formations",

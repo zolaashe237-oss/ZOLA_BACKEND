@@ -227,3 +227,57 @@ class BrowserReturnTests(APITestCase):
         self.client.get("/api/billing/payments/status/", {"ref": "ref_retour"})
         self.client.get("/api/billing/payments/status/", {"ref": "ref_retour"})
         self.assertEqual(self.list_orders.call_count, 1)
+
+
+# ─── Réconciliation (webhook perdu) ─────────────────────────────────────────
+
+@override_settings(**BASE_SETTINGS, SWINMO_MOCK=False, PAYMENT_FOLLOWUP_MAX_DAYS=14)
+class ReconciliationTests(APITestCase):
+    def setUp(self):
+        from django.core.cache import cache
+        cache.clear()
+        self.user = User.objects.create_user("rc@t.io", "pwd", full_name="RC", status=UserStatus.RESTREINT)
+        patcher = patch("apps.billing.swinmo.list_orders_by_email")
+        self.list_orders = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _pending(self, ref, age, amount=10000):
+        from django.utils import timezone
+        payment = Payment.objects.create(user=self.user, type=PaymentType.INSCRIPTION,
+                                         status=PaymentStatus.EN_ATTENTE, amount=amount, swinmo_ref=ref)
+        Payment.objects.filter(pk=payment.pk).update(paid_at=timezone.now() - age)
+        return payment
+
+    def _orders(self, *orders):
+        self.list_orders.return_value = {"success": True, "data": [
+            {"orderId": f"ord_{ref}", "status": status, "amount": 10000, "currency": "XAF",
+             "metadata": {"reference": ref}} for ref, status in orders]}
+
+    def test_lost_webhook_recovered_by_reconciliation(self):
+        from datetime import timedelta
+        from apps.billing.services import run_payment_reconciliation
+        paid = self._pending("ref_paid", timedelta(minutes=20))
+        failed = self._pending("ref_failed", timedelta(minutes=20))
+        self._orders(("ref_paid", "paid"), ("ref_failed", "failed"))
+        summary = run_payment_reconciliation()
+        paid.refresh_from_db(); failed.refresh_from_db()
+        self.assertEqual((paid.status, failed.status), (PaymentStatus.VALIDE, PaymentStatus.ECHOUE))
+        self.assertEqual((summary["activated"], summary["failed"]), (1, 1))
+
+    def test_recent_and_expired_payments_not_checked(self):
+        from datetime import timedelta
+        from apps.billing.services import run_payment_reconciliation
+        self._pending("ref_recent", timedelta(minutes=1))     # le webhook peut encore arriver
+        self._pending("ref_old", timedelta(days=20))          # au-delà du suivi (14 j)
+        self._orders(("ref_recent", "paid"), ("ref_old", "paid"))
+        self.assertEqual(run_payment_reconciliation(), {})
+        self.list_orders.assert_not_called()
+
+    def test_older_pending_payments_are_checked_less_often(self):
+        from datetime import timedelta
+        from apps.billing.services import run_payment_reconciliation
+        self._pending("ref_day_old", timedelta(hours=5))
+        self._orders()
+        self.assertEqual(run_payment_reconciliation(), {"pending": 1})
+        self.assertEqual(run_payment_reconciliation(), {"not-due": 1})   # revérifié dans 1 h
+        self.assertEqual(self.list_orders.call_count, 1)

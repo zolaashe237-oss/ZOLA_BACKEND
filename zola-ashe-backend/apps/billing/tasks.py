@@ -16,6 +16,13 @@ def daily_status_check():
 
 
 @app.task
+def reconcile_pending_payments():
+    """Toutes les 10 min : revérifie chez Swinmo les paiements restés en attente."""
+    from .services import run_payment_reconciliation
+    return f"reconcile_pending_payments: {run_payment_reconciliation()}"
+
+
+@app.task
 def send_confirmation_email(email: str, kind: str,
                              full_name: str = "", amount: int | None = None):
     """Envoie l'email de confirmation de paiement (HTML + texte brut)."""

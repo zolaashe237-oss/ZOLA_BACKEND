@@ -451,6 +451,51 @@ def _notify_payment_failed(payment: Payment) -> None:
         logger.exception("Notification d'échec de paiement impossible (paiement=%s)", payment.pk)
 
 
+# ─── Réconciliation : paiements restés en attente (webhook perdu) ────────────
+
+RECONCILE_MIN_AGE = timedelta(minutes=3)   # laisse le temps au webhook d'arriver
+RECONCILE_BATCH = 200
+
+
+def _reconcile_interval(age: timedelta) -> int:
+    """Secondes entre deux vérifications d'un même paiement : plus il est ancien,
+    plus on espace (limite les appels à l'API Swinmo)."""
+    if age < timedelta(hours=1):
+        return 0                # à chaque passage du job (toutes les 10 min)
+    if age < timedelta(days=1):
+        return 3600
+    return 86400
+
+
+def run_payment_reconciliation(now=None) -> dict:
+    """Revérifie chez Swinmo les paiements EN_ATTENTE (Swinmo ne renvoie pas un webhook
+    perdu). Même vérification centralisée que le webhook et la page de retour."""
+    from collections import Counter
+
+    from django.core.cache import cache
+
+    if settings.SWINMO_MOCK:
+        return {"skipped": "mock"}
+    now = now or timezone.now()
+    pending = (Payment.objects
+               .filter(status=PaymentStatus.EN_ATTENTE, swinmo_ref__isnull=False,
+                       paid_at__lte=now - RECONCILE_MIN_AGE,
+                       paid_at__gte=now - timedelta(days=settings.PAYMENT_FOLLOWUP_MAX_DAYS))
+               .select_related("user").order_by("paid_at")[:RECONCILE_BATCH])
+    outcomes = Counter()
+    for payment in pending:
+        interval = _reconcile_interval(now - payment.paid_at)
+        if interval and not cache.add(f"billing:reconcile:{payment.pk}", 1, interval):
+            outcomes["not-due"] += 1
+            continue
+        try:
+            outcomes[verify_and_apply(payment)] += 1
+        except Exception:
+            logger.exception("Réconciliation impossible (paiement=%s)", payment.pk)
+            outcomes["error"] += 1
+    return dict(outcomes)
+
+
 # ─── Traitement d'un webhook Swinmo (RG-01, RG-08) ──────────────────────────
 
 def find_webhook_payment(data: dict) -> Payment | None:

@@ -347,6 +347,9 @@ QUIZ_DEFAULT_THRESHOLD = 15     # seuil quiz /20 (CDC §4.4)
 SUBSCRIPTION_DURATION_DAYS = 365
 COTISATION_PERIOD_DAYS = 30     # une cotisation mensuelle prolonge l'accès de 30 jours
 COTISATION_GRACE_DAYS = 7       # délai de grâce après l'échéance avant RESTREINT (RG-02, RG-03)
+# Paiements restés en attente : revérifiés chez Swinmo (réconciliation, webhook perdu)
+# et relancés auprès du membre pendant au plus ce nombre de jours.
+PAYMENT_FOLLOWUP_MAX_DAYS = env.int("PAYMENT_FOLLOWUP_MAX_DAYS", default=14)
 
 # --- Paiements Swinmo -------------------------------------------------------
 # Doc : https://www.swinmo.shop/developers
