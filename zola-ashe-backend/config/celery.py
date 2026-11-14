@@ -24,6 +24,11 @@ app.conf.beat_schedule = {
         "task": "apps.admin_api.tasks.monthly_financial_report",
         "schedule": crontab(hour=6, minute=0, day_of_month=1),
     },
+    # Relance des paiements abandonnés ou échoués (5 min → 7 j) — toutes les 5 min.
+    "remind-unpaid-payments": {
+        "task": "apps.billing.tasks.remind_unpaid_payments",
+        "schedule": crontab(minute="*/5"),
+    },
     # Réconciliation des paiements restés en attente (webhook perdu) — toutes les 10 min.
     "reconcile-pending-payments": {
         "task": "apps.billing.tasks.reconcile_pending_payments",

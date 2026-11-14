@@ -1,4 +1,6 @@
 """Sécurité du module de paiement (audit) : mode simulé, webhook, montants, relances."""
+from datetime import timedelta
+
 from django.test import override_settings
 from rest_framework.test import APITestCase
 
@@ -281,3 +283,79 @@ class ReconciliationTests(APITestCase):
         self.assertEqual(run_payment_reconciliation(), {"pending": 1})
         self.assertEqual(run_payment_reconciliation(), {"not-due": 1})   # revérifié dans 1 h
         self.assertEqual(self.list_orders.call_count, 1)
+
+
+# ─── 10. Relances des paiements abandonnés ou échoués ───────────────────────
+
+@override_settings(**BASE_SETTINGS, SWINMO_MOCK=False, PAYMENT_FOLLOWUP_MAX_DAYS=14)
+class UnpaidReminderTests(APITestCase):
+    def setUp(self):
+        from django.utils import timezone
+        self.t0 = timezone.now()
+        self.user = User.objects.create_user("rel@t.io", "pwd", full_name="Rel Ance",
+                                             status=UserStatus.RESTREINT)
+        patcher = patch("apps.billing.tasks.send_unpaid_payment_reminder.delay")
+        self.send_email = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _payment(self, ptype=PaymentType.INSCRIPTION, status=PaymentStatus.EN_ATTENTE, ref="rel_1", age=None):
+        payment = Payment.objects.create(user=self.user, type=ptype, status=status,
+                                         amount=10000, swinmo_ref=ref)
+        Payment.objects.filter(pk=payment.pk).update(paid_at=self.t0 - (age or timedelta(0)))
+        payment.refresh_from_db()
+        return payment
+
+    def _run(self, after):
+        from apps.billing.services import run_unpaid_reminders
+        return run_unpaid_reminders(now=self.t0 + after)
+
+    def test_schedule_5min_1h_1d_3d_7d_then_stop(self):
+        payment = self._payment()
+        self.assertEqual(self._run(timedelta(minutes=4))["sent"], 0)     # trop tôt
+        self.assertEqual(self._run(timedelta(minutes=6))["sent"], 1)     # 1re relance
+        self.assertEqual(self._run(timedelta(minutes=7))["sent"], 0)     # pas de doublon
+        self.assertEqual(self._run(timedelta(hours=1, minutes=1))["sent"], 1)
+        self.assertEqual(self._run(timedelta(days=1, minutes=1))["sent"], 1)
+        self.assertEqual(self._run(timedelta(days=3, minutes=1))["sent"], 1)
+        self.assertEqual(self._run(timedelta(days=7, minutes=1))["sent"], 1)
+        self.assertEqual(self._run(timedelta(days=10))["sent"], 0)       # 5 relances au plus
+        payment.refresh_from_db()
+        self.assertEqual(payment.reminder_count, 5)
+        self.assertIsNotNone(payment.last_reminder_at)
+        self.assertEqual(self.send_email.call_count, 5)
+
+    def test_stops_once_paid(self):
+        payment = self._payment()
+        self.assertEqual(self._run(timedelta(minutes=6))["sent"], 1)
+        Payment.objects.filter(pk=payment.pk).update(status=PaymentStatus.VALIDE)
+        self.assertEqual(self._run(timedelta(hours=2))["sent"], 0)
+
+    def test_stops_when_access_obtained_otherwise(self):
+        self._payment()
+        self.user.set_status(UserStatus.ACTIF)   # ex. validation manuelle par l'admin
+        self.assertEqual(self._run(timedelta(minutes=6)), {"sent": 0, "stopped": 1})
+
+    def test_stops_after_max_delay(self):
+        self._payment(age=timedelta(days=15))
+        self.assertEqual(self._run(timedelta(0))["sent"], 0)
+
+    def test_failed_payment_reminded_but_never_donations(self):
+        self._payment(status=PaymentStatus.ECHOUE, ref="rel_failed")
+        self._payment(ptype=PaymentType.DON, ref="rel_don")
+        self.assertEqual(self._run(timedelta(minutes=6))["sent"], 1)
+
+    def test_only_latest_attempt_reminded(self):
+        self._payment(ref="rel_old", age=timedelta(minutes=10))
+        self._payment(ref="rel_new")                      # nouvelle tentative du membre
+        self.assertEqual(self._run(timedelta(minutes=6)), {"sent": 1, "stopped": 1})
+
+    def test_reminder_creates_notification_and_email_content(self):
+        from django.core import mail
+        from apps.billing.tasks import send_unpaid_payment_reminder
+        from apps.notifications.models import Notification
+        payment = self._payment()
+        self._run(timedelta(minutes=6))
+        self.assertTrue(Notification.objects.filter(user=self.user, title="Paiement à finaliser").exists())
+        self.send_email.assert_called_once_with(payment.pk)
+        send_unpaid_payment_reminder.run(payment.pk)   # rendu réel de l'email
+        self.assertIn("/inscription?step=3", mail.outbox[-1].body)

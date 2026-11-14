@@ -496,6 +496,115 @@ def run_payment_reconciliation(now=None) -> dict:
     return dict(outcomes)
 
 
+# ─── Relances des paiements abandonnés ou échoués ───────────────────────────
+
+# Délai après la création du paiement pour la 1re, 2e… relance (5 au maximum).
+REMINDER_SCHEDULE = (timedelta(minutes=5), timedelta(hours=1), timedelta(days=1),
+                     timedelta(days=3), timedelta(days=7))
+# Les dons ne sont pas relancés ; un remboursement n'est pas un paiement à reprendre.
+NOT_REMINDED_TYPES = (PaymentType.DON, PaymentType.REMBOURSEMENT)
+MEMBERSHIP_TYPES = (PaymentType.INSCRIPTION, PaymentType.COTISATION, PaymentType.ANNUEL)
+
+
+def _reminder_obsolete(payment: Payment) -> bool:
+    """Plus rien à relancer : le membre a payé autrement ou a relancé un paiement lui-même."""
+    from apps.accounts.features import monthly_subscription_enabled
+    same_item = Payment.objects.filter(user_id=payment.user_id, type=payment.type,
+                                       formation_id=payment.formation_id,
+                                       library_pdf_id=payment.library_pdf_id)
+    if same_item.filter(paid_at__gt=payment.paid_at).exists():
+        return True   # nouvelle tentative (relancée à son tour) ou paiement plus récent
+    if same_item.filter(status=PaymentStatus.VALIDE).exists() and payment.type not in MEMBERSHIP_TYPES:
+        return True   # contenu déjà acheté / branche déjà payée
+    user = payment.user
+    if payment.type in MEMBERSHIP_TYPES and user.status == UserStatus.ACTIF:
+        return True   # accès déjà à jour (autre formule payée, validation admin…)
+    if payment.type == PaymentType.COTISATION and not monthly_subscription_enabled():
+        return True
+    branch = {PaymentType.BRANCHE_FEMME: "FEMME", PaymentType.BRANCHE_ENFANT: "ENFANT"}.get(payment.type)
+    if branch and branch in (user.access_levels or []):
+        return True
+    if payment.type == PaymentType.FORMATION and payment.formation_id and \
+            FormationPurchase.objects.filter(user=user, formation_id=payment.formation_id).exists():
+        return True
+    if payment.type == PaymentType.LIVRE and payment.library_pdf_id and \
+            LibraryPdfPurchase.objects.filter(user=user, library_pdf_id=payment.library_pdf_id).exists():
+        return True
+    return False
+
+
+def run_unpaid_reminders(now=None) -> dict:
+    """Relance (email + notification) les paiements en ligne abandonnés ou échoués selon
+    REMINDER_SCHEDULE, pendant au plus PAYMENT_FOLLOWUP_MAX_DAYS. Arrêt dès que le
+    paiement aboutit ; compteur et date de dernière relance stockés (pas de doublon)."""
+    from django.db.models import F
+
+    from .tasks import send_unpaid_payment_reminder
+
+    now = now or timezone.now()
+    candidates = (Payment.objects
+                  .filter(status__in=(PaymentStatus.EN_ATTENTE, PaymentStatus.ECHOUE),
+                          swinmo_ref__isnull=False, reminder_count__lt=len(REMINDER_SCHEDULE),
+                          paid_at__gte=now - timedelta(days=settings.PAYMENT_FOLLOWUP_MAX_DAYS))
+                  .exclude(type__in=NOT_REMINDED_TYPES)
+                  .select_related("user").order_by("paid_at"))
+    sent = stopped = 0
+    for payment in candidates:
+        if now < payment.paid_at + REMINDER_SCHEDULE[payment.reminder_count]:
+            continue
+        if _reminder_obsolete(payment):
+            # On clôt le suivi de ce paiement : plus aucune relance.
+            Payment.objects.filter(pk=payment.pk).update(reminder_count=len(REMINDER_SCHEDULE))
+            stopped += 1
+            continue
+        # Mise à jour conditionnelle : si un autre worker vient de relancer, on s'abstient.
+        claimed = Payment.objects.filter(pk=payment.pk, reminder_count=payment.reminder_count).update(
+            reminder_count=F("reminder_count") + 1, last_reminder_at=now)
+        if not claimed:
+            continue
+        _notify_unpaid(payment)
+        send_unpaid_payment_reminder.delay(payment.pk)
+        sent += 1
+    return {"sent": sent, "stopped": stopped}
+
+
+PAYMENT_LABELS = {
+    "INSCRIPTION": "votre adhésion", "COTISATION": "votre cotisation mensuelle",
+    "ANNUEL": "votre cotisation annuelle", "BRANCHE_FEMME": "l'accès Branche Femme",
+    "BRANCHE_ENFANT": "l'accès Branche Enfant", "FORMATION": "votre formation",
+    "LIVRE": "votre livre",
+}
+
+
+def unpaid_payment_label(payment: Payment) -> str:
+    item = payment.formation or payment.library_pdf
+    base = PAYMENT_LABELS.get(payment.type, "votre paiement")
+    return f"{base} « {item.title} »" if item else base
+
+
+def unpaid_payment_url(payment: Payment) -> str:
+    """Page où reprendre le paiement (la session Swinmo d'origine a pu expirer)."""
+    path = {
+        PaymentType.FORMATION: f"/espace-membre/formations/{payment.formation_id}",
+        PaymentType.LIVRE: "/espace-membre/bibliotheque",
+        PaymentType.COTISATION: "/espace-membre/transactions",
+    }.get(payment.type, "/inscription?step=3")
+    return f"{settings.WEB_BASE_URL}{path}"
+
+
+def _notify_unpaid(payment: Payment) -> None:
+    try:
+        from apps.notifications.models import Notification, NotifType
+        Notification.objects.create(
+            user=payment.user, type=NotifType.PAIEMENT,
+            title="Paiement à finaliser",
+            body=(f"Votre paiement pour {unpaid_payment_label(payment)} n'est pas finalisé. "
+                  "Reprenez-le en un clic depuis votre espace."),
+        )
+    except Exception:
+        logger.exception("Notification de relance impossible (paiement=%s)", payment.pk)
+
+
 # ─── Traitement d'un webhook Swinmo (RG-01, RG-08) ──────────────────────────
 
 def find_webhook_payment(data: dict) -> Payment | None:
