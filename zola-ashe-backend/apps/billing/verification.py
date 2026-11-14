@@ -1,0 +1,105 @@
+"""Vérification d'une transaction auprès de Swinmo — seule source de vérité.
+
+Le corps d'un webhook n'est jamais cru sur parole, même signé (le secret peut
+fuiter) : statut, montant, devise et référence sont relus chez Swinmo avec notre
+clé secrète (`GET /api/developer/order/:orderId`). Utilisé par le webhook, la page
+de retour et le job de réconciliation.
+"""
+import logging
+from dataclasses import dataclass
+
+from . import swinmo
+
+logger = logging.getLogger(__name__)
+
+# La doc Swinmo montre « paid » (GET) et « PAID » (webhook) sans lister les autres
+# valeurs : on normalise en minuscules et on reconnaît les variantes usuelles. Tout
+# statut inconnu est traité comme « en attente » (jamais comme un succès).
+PAID_STATUSES = {"paid", "succeeded", "success", "completed", "complete"}
+FAILED_STATUSES = {"failed", "expired", "cancelled", "canceled", "rejected", "declined"}
+
+
+@dataclass(frozen=True)
+class ProviderVerification:
+    """Résultat de la vérification chez Swinmo.
+
+    outcome : « paid » | « failed » | « pending » | « mismatch » (montant/devise non
+    conforme) | « unverifiable » (commande illisible ou ne correspondant pas à la nôtre).
+    """
+    outcome: str
+    provider_tx_id: str = ""
+    paid_amount: int | None = None
+    currency: str = ""
+    reason: str = ""
+
+
+def _order_data(response) -> dict:
+    """Commande dans la réponse Swinmo (`{"success": …, "data": {…}}` ou à plat)."""
+    if not isinstance(response, dict):
+        return {}
+    data = response.get("data")
+    return data if isinstance(data, dict) else response
+
+
+def _find_order(payment, provider_tx_id_hint: str = "") -> dict | None:
+    """Commande Swinmo de ce paiement : par son identifiant Swinmo s'il est connu, sinon
+    parmi les commandes de l'email du membre (webhook perdu, retour sans identifiant)."""
+    order_id = provider_tx_id_hint or payment.provider_tx_id
+    if order_id:
+        order = _order_data(swinmo.get_order_details(order_id))
+        return {**order, "orderId": order.get("orderId") or order.get("id") or order_id} if order else None
+    response = swinmo.list_orders_by_email(payment.user.email)
+    data = response.get("data") if isinstance(response, dict) else response
+    if isinstance(data, dict):
+        data = data.get("orders", [])
+    for order in data if isinstance(data, list) else []:
+        if isinstance(order, dict) and (order.get("metadata") or {}).get("reference") == payment.swinmo_ref:
+            return {**order, "orderId": order.get("orderId") or order.get("id") or ""}
+    return None
+
+
+def _to_int(value) -> int | None:
+    try:
+        return int(round(float(value)))
+    except (TypeError, ValueError):
+        return None
+
+
+def verify_transaction_with_provider(payment, provider_tx_id_hint: str = "") -> ProviderVerification:
+    """Relit la transaction chez Swinmo et la confronte à notre paiement en base."""
+    try:
+        order = _find_order(payment, provider_tx_id_hint)
+    except swinmo.SwinmoError as exc:
+        return ProviderVerification("unverifiable", reason=f"Swinmo injoignable : {exc}")
+    if not order:
+        return ProviderVerification("pending", reason="commande introuvable chez Swinmo")
+
+    order_id = str(order.get("orderId") or "")
+    # Concordance : la commande doit porter NOTRE référence interne.
+    reference = (order.get("metadata") or {}).get("reference")
+    if reference != payment.swinmo_ref:
+        return ProviderVerification(
+            "unverifiable", order_id,
+            reason=f"référence Swinmo {reference!r} ≠ référence interne {payment.swinmo_ref!r}")
+
+    status = str(order.get("status") or "").strip().lower()
+    if status in FAILED_STATUSES:
+        return ProviderVerification("failed", order_id, reason=f"statut Swinmo « {status} »")
+    if status not in PAID_STATUSES:
+        return ProviderVerification("pending", order_id, reason=f"statut Swinmo « {status or '?'} »")
+
+    paid_amount = _to_int(order.get("amount"))
+    # Devise : celle de la boutique (XAF) si Swinmo ne la précise pas. Une carte débitée
+    # en USD reste créditée dans la devise de la boutique (montant de la session).
+    currency = str(order.get("currency") or payment.currency).upper()
+    if paid_amount is None:
+        return ProviderVerification("unverifiable", order_id, reason="montant absent de la réponse Swinmo")
+    if currency != payment.currency:
+        return ProviderVerification("mismatch", order_id, paid_amount, currency,
+                                    reason=f"devise {currency} ≠ {payment.currency} attendue")
+    # Montant payé ≥ montant attendu (des frais côté client restent acceptés).
+    # Pas de coupons sur la plateforme : un montant inférieur est toujours refusé.
+    if paid_amount < payment.amount:
+        return ProviderVerification("mismatch", order_id, paid_amount, currency,
+                                    reason=f"montant payé {paid_amount} < {payment.amount} attendu")
+    return ProviderVerification("paid", order_id, paid_amount, currency)

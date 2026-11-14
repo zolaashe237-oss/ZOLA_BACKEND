@@ -277,5 +277,7 @@ class SwinmoWebhookView(APIView):
         event = body.get("event", "")
         data = body.get("data") or {}
         outcome = process_webhook_event(event, data)
-        # Toujours 200 si la signature est valide → évite les re-livraisons inutiles.
+        if outcome == "unknown-payment":
+            # Transaction non initiée par notre système : rejet (et log côté service).
+            return Response({"detail": "Transaction inconnue."}, status=status.HTTP_404_NOT_FOUND)
         return Response({"received": True, "outcome": outcome})

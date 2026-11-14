@@ -384,60 +384,109 @@ def _create_payment_notification(user, kind: str, amount: int) -> None:
         pass
 
 
+# ─── Application d'une vérification Swinmo (webhook, retour, réconciliation) ──
+
+def apply_provider_verification(payment: Payment, verification) -> str:
+    """Applique le résultat de `verify_transaction_with_provider` au paiement.
+
+    Verrou de ligne + transaction : deux webhooks simultanés ne créditent qu'une fois.
+    Un paiement VALIDE est final (jamais repassé en échec ou en attente). Le type de
+    paiement vient de la base, jamais de la requête.
+    """
+    with transaction.atomic():
+        locked = Payment.objects.select_for_update().select_related("user").get(pk=payment.pk)
+        if locked.status == PaymentStatus.VALIDE:
+            return "duplicate"
+        outcome = verification.outcome
+        if verification.provider_tx_id:
+            locked.provider_tx_id = verification.provider_tx_id
+
+        if outcome == "paid":
+            locked.paid_amount = verification.paid_amount
+            locked.currency = verification.currency or locked.currency
+            locked.verified_at = timezone.now()
+            activate_paid_payment(locked, locked.type)
+            return "activated"
+
+        if outcome == "mismatch":
+            locked.status = PaymentStatus.AMOUNT_MISMATCH
+            locked.paid_amount = verification.paid_amount
+            locked.verified_at = timezone.now()
+            locked.save()
+            logger.error("[Swinmo] ALERTE montant non conforme : paiement=%s user=%s — %s",
+                         locked.pk, locked.user_id, verification.reason)
+            return "amount-mismatch"
+
+        if outcome == "failed":
+            if locked.status != PaymentStatus.ECHOUE:
+                locked.status = PaymentStatus.ECHOUE
+                locked.save()
+                _notify_payment_failed(locked)
+            return "failed"
+
+        if outcome == "unverifiable":
+            logger.warning("[Swinmo] Vérification impossible : paiement=%s — %s",
+                           locked.pk, verification.reason)
+        if verification.provider_tx_id:
+            locked.save(update_fields=["provider_tx_id"])
+        return outcome  # « pending » ou « unverifiable » : rien d'accordé
+
+
+def verify_and_apply(payment: Payment, provider_tx_id_hint: str = "") -> str:
+    """Vérifie chez Swinmo puis applique — point d'entrée unique."""
+    from .verification import verify_transaction_with_provider
+    return apply_provider_verification(payment, verify_transaction_with_provider(payment, provider_tx_id_hint))
+
+
+def _notify_payment_failed(payment: Payment) -> None:
+    try:
+        from apps.notifications.models import Notification, NotifType
+        Notification.objects.create(
+            user=payment.user, type=NotifType.PAIEMENT,
+            title="Paiement non abouti",
+            body=(f"Votre paiement de {payment.amount:,} FCFA n'a pas abouti. "
+                  "Vous pouvez réessayer depuis votre espace.").replace(",", " "),
+        )
+    except Exception:
+        logger.exception("Notification d'échec de paiement impossible (paiement=%s)", payment.pk)
+
+
 # ─── Traitement d'un webhook Swinmo (RG-01, RG-08) ──────────────────────────
 
-def process_webhook_event(event: str, data: dict) -> str:
-    """Traite un événement webhook déjà authentifié. Retourne un libellé d'issue.
-
-    Idempotent : un `order.paid` rejoué sur un paiement déjà VALIDE est ignoré.
-    """
+def find_webhook_payment(data: dict) -> Payment | None:
+    """Paiement visé par un webhook : par notre référence, sinon par l'identifiant de
+    commande Swinmo (déjà connu, ou relu chez Swinmo avec notre clé)."""
     reference = data.get("reference") or (data.get("metadata") or {}).get("reference")
-    payment = None
-    matched_via_fallback = False
-    matched_via_api = False
-
-    # Si pas de référence directe dans le payload, essayer de la récupérer via l'API Swinmo
-    order_id = data.get("orderId")
-    if not reference and order_id:
+    order_id = str(data.get("orderId") or "")
+    payment = Payment.objects.filter(swinmo_ref=reference).first() if reference else None
+    if payment is None and order_id:
+        payment = Payment.objects.filter(provider_tx_id=order_id).first()
+    if payment is None and order_id:
         try:
-            logger.info(f"[Swinmo] Webhook sans metadata. Récupération des détails de la commande {order_id} via l'API...")
-            order_details = swinmo.get_order_details(order_id)
-            if order_details.get("success"):
-                metadata = order_details.get("data", {}).get("metadata") or {}
-                reference = metadata.get("reference")
-                if reference:
-                    logger.info(f"[Swinmo] Référence trouvée via API Swinmo: {reference}")
-                    matched_via_api = True
-        except Exception as e:
-            logger.warning(f"[Swinmo] Échec récupération commande via API Swinmo pour {order_id}: {e}")
+            details = swinmo.get_order_details(order_id)
+            ref = ((details.get("data") or {}).get("metadata") or {}).get("reference")
+            if ref:
+                payment = Payment.objects.filter(swinmo_ref=ref).first()
+        except swinmo.SwinmoError as exc:
+            logger.warning("[Swinmo] Commande %s illisible : %s", order_id, exc)
+    return payment
 
-    if reference:
-        payment = Payment.objects.filter(swinmo_ref=reference).first()
 
+def process_webhook_event(event: str, data: dict) -> str:
+    """Traite un webhook déjà authentifié (signature). Retourne un libellé d'issue.
+
+    Le corps ne décide de rien : on retrouve NOTRE paiement, puis on relit la commande
+    chez Swinmo (GET avec notre clé secrète) ; seules ces données font foi.
+    """
+    payment = find_webhook_payment(data)
     if payment is None:
+        logger.warning("[Swinmo] Webhook pour une transaction inconnue : event=%s ref=%s order=%s",
+                       event, data.get("reference") or (data.get("metadata") or {}).get("reference"),
+                       data.get("orderId"))
         return "unknown-payment"
-
-    if event == "order.paid":
-        if payment.status == PaymentStatus.VALIDE:
-            return "duplicate"            # RG-08 : déjà traité
-        
-        # Associer la référence Swinmo de l'ordre si elle n'est pas encore enregistrée
-        order_id = data.get("orderId")
-        if order_id and (not payment.swinmo_ref or matched_via_fallback or matched_via_api):
-            payment.swinmo_ref = order_id
-
-        # Récupérer le "kind" soit des metadata, soit directement du type de paiement résolu
-        kind = (data.get("metadata") or {}).get("kind") or payment.type
-        activate_paid_payment(payment, kind)
-        return "activated"
-
-    if event == "order.failed":
-        if payment.status != PaymentStatus.VALIDE:
-            payment.status = PaymentStatus.ECHOUE
-            payment.save(update_fields=["status"])
-        return "failed"
-
-    return "ignored-event"
+    if event not in ("order.paid", "order.failed"):
+        return "ignored-event"
+    return verify_and_apply(payment, str(data.get("orderId") or ""))
 
 
 # ─── Activation / désactivation globale de la cotisation mensuelle ──────────
