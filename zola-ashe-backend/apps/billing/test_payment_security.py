@@ -177,3 +177,53 @@ class WebhookSecurityTests(APITestCase):
         self.assertEqual(apply_provider_verification(self.payment, ok), "activated")
         self.assertEqual(apply_provider_verification(self.payment, ok), "duplicate")
         self.assertEqual(Subscription.objects.filter(user=self.user).count(), 1)
+
+
+# ─── 8. Retour navigateur ───────────────────────────────────────────────────
+
+@override_settings(**BASE_SETTINGS, SWINMO_MOCK=False)
+class BrowserReturnTests(APITestCase):
+    def setUp(self):
+        self.user = User.objects.create_user("r@t.io", "pwd", full_name="R", status=UserStatus.RESTREINT)
+        self.payment = Payment.objects.create(
+            user=self.user, type=PaymentType.INSCRIPTION, status=PaymentStatus.EN_ATTENTE,
+            amount=10000, swinmo_ref="ref_retour")
+        self.client.force_authenticate(self.user)
+        from django.core.cache import cache
+        cache.clear()
+        patcher = patch("apps.billing.swinmo.list_orders_by_email")
+        self.list_orders = patcher.start()
+        self.addCleanup(patcher.stop)
+
+    def _return_page(self):
+        from django.core.cache import cache
+        cache.clear()   # ignore l'espacement des vérifications entre deux appels du test
+        return self.client.get("/api/billing/payments/status/", {"ref": "ref_retour"}).json()
+
+    def test_browser_return_alone_never_activates(self):
+        # Swinmo ne connaît pas (encore) la commande, ou la dit en attente → rien n'est accordé.
+        self.list_orders.return_value = {"success": True, "data": []}
+        self.assertEqual(self._return_page()["status"], PaymentStatus.EN_ATTENTE)
+        self.list_orders.return_value = {"success": True, "data": [
+            {"orderId": "ord_r", "status": "pending", "amount": 10000, "currency": "XAF",
+             "metadata": {"reference": "ref_retour"}}]}
+        self.assertEqual(self._return_page()["status"], PaymentStatus.EN_ATTENTE)
+        self.user.refresh_from_db()
+        self.assertEqual(self.user.status, UserStatus.RESTREINT)
+
+    def test_return_activates_only_when_provider_confirms(self):
+        """Webhook perdu : le retour retrouve la commande chez Swinmo et ne crédite que
+        sur sa confirmation (statut payé, bon montant, notre référence)."""
+        self.list_orders.return_value = {"success": True, "data": [
+            {"orderId": "ord_r", "status": "paid", "amount": 10000, "currency": "XAF",
+             "metadata": {"reference": "ref_retour"}}]}
+        self.assertEqual(self._return_page()["status"], PaymentStatus.VALIDE)
+        self.payment.refresh_from_db()
+        self.assertEqual(self.payment.provider_tx_id, "ord_r")
+        self.list_orders.assert_called_with("r@t.io")
+
+    def test_return_verification_is_throttled(self):
+        self.list_orders.return_value = {"success": True, "data": []}
+        self.client.get("/api/billing/payments/status/", {"ref": "ref_retour"})
+        self.client.get("/api/billing/payments/status/", {"ref": "ref_retour"})
+        self.assertEqual(self.list_orders.call_count, 1)
