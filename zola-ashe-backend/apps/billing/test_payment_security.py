@@ -135,6 +135,55 @@ class WebhookSecurityTests(APITestCase):
         self._refresh()
         self.assertEqual(self.payment.status, PaymentStatus.EN_ATTENTE)
 
+    def test_order_without_amount_validated_on_paid_status_and_binding(self):
+        """Cas réel : la relecture Swinmo ne contient ni montant ni metadata."""
+        order = {"success": True, "data": {"orderId": "ord_1", "status": "PAID", "currency": "XAF",
+                                           "metadata": {}, "customerEmail": self.user.email}}
+        self.get_order.return_value = order
+        self.assertEqual(self._post(self._paid_event()).data["outcome"], "activated")
+        self._refresh()
+        self.assertEqual(self.payment.status, PaymentStatus.VALIDE)
+
+    def _real_event(self, **order):
+        """Webhook au format réel Swinmo (data.order.*, priceSource, customerEmail…)."""
+        base = {"orderId": "ord_1", "reference": "ref_audit", "status": "PAID", "amount": 10000,
+                "currency": "XAF", "customerEmail": self.user.email,
+                "order": {"orderId": "ord_1", "amount": 10000, "currency": "XAF",
+                          "priceSource": "developer_session", "paymentMethod": "MOMO", **order}}
+        return {"event": "order.paid", "data": base}
+
+    def _get_order_without_amount(self):
+        self.get_order.return_value = {"success": True, "data": {
+            "orderId": "ord_1", "status": "PAID", "currency": "XAF", "metadata": {},
+            "customerEmail": self.user.email}}
+
+    def test_real_webhook_format_validated(self):
+        self._get_order_without_amount()
+        self.assertEqual(self._post(self._real_event()).data["outcome"], "activated")
+        self._refresh()
+        self.assertEqual((self.payment.status, self.payment.paid_amount), (PaymentStatus.VALIDE, 10000))
+
+    def test_direct_shop_purchase_rejected_by_price_source(self):
+        """Achat direct au prix de référence de la boutique (pas via notre session) → refusé."""
+        self._get_order_without_amount()
+        res = self._post(self._real_event(priceSource="product"))
+        self.assertEqual(res.data["outcome"], "amount-mismatch")
+        self._refresh()
+        self.assertEqual(self.payment.status, PaymentStatus.AMOUNT_MISMATCH)
+
+    def test_free_order_rejected(self):
+        self._get_order_without_amount()
+        event = self._real_event(amount=0, paymentMethod="FREE")
+        event["data"]["amount"] = 0
+        self.assertEqual(self._post(event).data["outcome"], "amount-mismatch")
+
+    def test_order_without_amount_uses_lower_webhook_amount_as_mismatch(self):
+        order = {"success": True, "data": {"orderId": "ord_1", "status": "PAID", "currency": "XAF",
+                                           "metadata": {}, "customerEmail": self.user.email}}
+        self.get_order.return_value = order
+        event = self._paid_event(amount=1)
+        self.assertEqual(self._post(event).data["outcome"], "amount-mismatch")
+
     # 4. Montant inférieur (pas de coupons) → AMOUNT_MISMATCH, pas d'accès
     def test_lower_amount_marks_mismatch_without_access(self):
         self.get_order.return_value = _order("ref_audit", amount=500)

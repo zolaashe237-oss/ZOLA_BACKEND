@@ -8,6 +8,8 @@ de retour et le job de réconciliation.
 import logging
 from dataclasses import dataclass
 
+from django.conf import settings
+
 from . import swinmo
 
 logger = logging.getLogger(__name__)
@@ -96,7 +98,8 @@ def _to_int(value) -> int | None:
         return None
 
 
-def verify_transaction_with_provider(payment, provider_tx_id_hint: str = "") -> ProviderVerification:
+def verify_transaction_with_provider(payment, provider_tx_id_hint: str = "",
+                                     webhook: dict | None = None) -> ProviderVerification:
     """Relit la transaction chez Swinmo et la confronte à notre paiement en base."""
     try:
         order = _find_order(payment, provider_tx_id_hint)
@@ -106,6 +109,23 @@ def verify_transaction_with_provider(payment, provider_tx_id_hint: str = "") -> 
         return ProviderVerification("pending", reason="commande introuvable chez Swinmo")
 
     order_id = str(order.get("orderId") or "")
+    # Le webhook signé (data) porte lui aussi montant, devise, e-mail et `order.priceSource` ;
+    # la relecture GET, elle, ne contient ni montant ni metadata. On complète l'une par l'autre.
+    webhook = webhook if isinstance(webhook, dict) else {}
+    wh_order = webhook.get("order") if isinstance(webhook.get("order"), dict) else {}
+    webhook_amount = _to_int(webhook.get("amount") if webhook.get("amount") is not None else wh_order.get("amount"))
+    wh_email = webhook.get("customerEmail") or wh_order.get("customerEmail")
+    if wh_email and not (order.get("customerEmail") or order.get("email")):
+        order = {**order, "customerEmail": wh_email}
+    wh_currency = webhook.get("currency") or wh_order.get("currency")
+    if wh_currency and not order.get("currency"):
+        order = {**order, "currency": wh_currency}
+    # `priceSource` = d'où vient le prix : « developer_session » = montant fixé par NOTRE
+    # serveur. Toute autre origine (achat direct en boutique au prix de référence) est refusée.
+    price_source = wh_order.get("priceSource")
+    if price_source and price_source != "developer_session":
+        return ProviderVerification("mismatch", order_id, webhook_amount, "",
+                                    reason=f"prix issu de « {price_source} » et non de notre session de paiement")
     # Concordance : la commande doit porter NOTRE référence interne.
     reference = (order.get("metadata") or {}).get("reference")
     if reference is not None and reference != payment.swinmo_ref:
@@ -124,6 +144,20 @@ def verify_transaction_with_provider(payment, provider_tx_id_hint: str = "") -> 
         return ProviderVerification("pending", order_id, reason=f"statut Swinmo « {status or '?'} »")
 
     paid_amount = _to_int(order.get("amount"))
+    if paid_amount is None:
+        # La relecture Swinmo ne renvoie pas toujours le montant (seulement statut, devise,
+        # e-mail, produit) : on retombe sur celui du webhook signé, s'il en porte un.
+        paid_amount = webhook_amount
+    if paid_amount is None and settings.SWINMO_ALLOW_UNVERIFIED_AMOUNT and order_id:
+        # Dernier recours : commande payée, rattachée à notre paiement (référence signée du
+        # webhook / identifiant unique + e-mail) mais montant introuvable chez Swinmo.
+        logger.warning("[Swinmo] montant non vérifiable chez Swinmo (paiement=%s, commande=%s) : "
+                       "accepté sur statut PAID + rattachement", payment.pk, order_id)
+        currency = str(order.get("currency") or payment.currency).upper()
+        if currency != payment.currency:
+            return ProviderVerification("mismatch", order_id, None, currency,
+                                        reason=f"devise {currency} ≠ {payment.currency} attendue")
+        return ProviderVerification("paid", order_id, None, currency)
     # Devise : celle de la boutique (XAF) si Swinmo ne la précise pas. Une carte débitée
     # en USD reste créditée dans la devise de la boutique (montant de la session).
     currency = str(order.get("currency") or payment.currency).upper()

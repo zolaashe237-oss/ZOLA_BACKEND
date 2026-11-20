@@ -350,6 +350,10 @@ COTISATION_GRACE_DAYS = 7       # délai de grâce après l'échéance avant RES
 # Paiements restés en attente : revérifiés chez Swinmo (réconciliation, webhook perdu)
 # et relancés auprès du membre pendant au plus ce nombre de jours.
 PAYMENT_FOLLOWUP_MAX_DAYS = env.int("PAYMENT_FOLLOWUP_MAX_DAYS", default=14)
+# L'API Swinmo « commande » ne renvoie pas le montant : si le webhook n'en porte pas non plus,
+# on accepte une commande PAID rattachée à notre paiement sans le contrôle du montant.
+# Mettre False pour exiger un montant vérifiable (les paiements resteront alors en attente).
+SWINMO_ALLOW_UNVERIFIED_AMOUNT = env.bool("SWINMO_ALLOW_UNVERIFIED_AMOUNT", default=True)
 
 # --- Paiements Swinmo -------------------------------------------------------
 # Doc : https://www.swinmo.shop/developers

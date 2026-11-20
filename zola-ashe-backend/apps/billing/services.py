@@ -432,10 +432,12 @@ def apply_provider_verification(payment: Payment, verification) -> str:
         return outcome  # « pending » ou « unverifiable » : rien d'accordé
 
 
-def verify_and_apply(payment: Payment, provider_tx_id_hint: str = "") -> str:
+def verify_and_apply(payment: Payment, provider_tx_id_hint: str = "",
+                     webhook: dict | None = None) -> str:
     """Vérifie chez Swinmo puis applique — point d'entrée unique."""
     from .verification import verify_transaction_with_provider
-    return apply_provider_verification(payment, verify_transaction_with_provider(payment, provider_tx_id_hint))
+    return apply_provider_verification(
+        payment, verify_transaction_with_provider(payment, provider_tx_id_hint, webhook))
 
 
 def _notify_payment_failed(payment: Payment) -> None:
@@ -640,7 +642,7 @@ def process_webhook_event(event: str, data: dict) -> str:
         return "unknown-payment"
     if event not in ("order.paid", "order.failed"):
         return "ignored-event"
-    return verify_and_apply(payment, str(data.get("orderId") or ""))
+    return verify_and_apply(payment, str(data.get("orderId") or ""), data)
 
 
 # ─── Activation / désactivation globale de la cotisation mensuelle ──────────
