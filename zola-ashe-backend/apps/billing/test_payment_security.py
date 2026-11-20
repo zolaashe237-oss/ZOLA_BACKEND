@@ -171,11 +171,23 @@ class WebhookSecurityTests(APITestCase):
         self._refresh()
         self.assertEqual(self.payment.status, PaymentStatus.AMOUNT_MISMATCH)
 
-    def test_free_order_rejected(self):
-        self._get_order_without_amount()
-        event = self._real_event(amount=0, paymentMethod="FREE")
+    def _free_event(self):
+        event = self._real_event(amount=0, paymentMethod="FREE", gateway="FREE")
         event["data"]["amount"] = 0
-        self.assertEqual(self._post(event).data["outcome"], "amount-mismatch")
+        event["data"]["transactionId"] = "FREE-1"
+        return event
+
+    @override_settings(SWINMO_ACCEPT_FREE_ORDERS=True)
+    def test_free_order_accepted_for_tests(self):
+        self._get_order_without_amount()
+        self.assertEqual(self._post(self._free_event()).data["outcome"], "activated")
+        self._refresh()
+        self.assertEqual((self.payment.status, self.payment.paid_amount), (PaymentStatus.VALIDE, 0))
+
+    @override_settings(SWINMO_ACCEPT_FREE_ORDERS=False)
+    def test_free_order_rejected_when_disabled(self):
+        self._get_order_without_amount()
+        self.assertEqual(self._post(self._free_event()).data["outcome"], "amount-mismatch")
 
     def test_order_without_amount_uses_lower_webhook_amount_as_mismatch(self):
         order = {"success": True, "data": {"orderId": "ord_1", "status": "PAID", "currency": "XAF",

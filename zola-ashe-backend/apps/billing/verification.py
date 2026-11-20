@@ -143,6 +143,16 @@ def verify_transaction_with_provider(payment, provider_tx_id_hint: str = "",
     if status not in PAID_STATUSES:
         return ProviderVerification("pending", order_id, reason=f"statut Swinmo « {status or '?'} »")
 
+    # Commande gratuite (code promo 100 %, essais) : acceptée si SWINMO_ACCEPT_FREE_ORDERS,
+    # sans contrôle de montant. Le rattachement à notre paiement reste exigé (ci-dessus).
+    is_free = (str(wh_order.get("gateway") or "").upper() == "FREE"
+               or str(wh_order.get("paymentMethod") or "").upper() == "FREE"
+               or str(webhook.get("transactionId") or "").upper().startswith("FREE-"))
+    if is_free and settings.SWINMO_ACCEPT_FREE_ORDERS:
+        logger.warning("[Swinmo] commande GRATUITE acceptée (paiement=%s, commande=%s)", payment.pk, order_id)
+        currency = str(order.get("currency") or payment.currency).upper()
+        return ProviderVerification("paid", order_id, 0, currency)
+
     paid_amount = _to_int(order.get("amount"))
     if paid_amount is None:
         # La relecture Swinmo ne renvoie pas toujours le montant (seulement statut, devise,

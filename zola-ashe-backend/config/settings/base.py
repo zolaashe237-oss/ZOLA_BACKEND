@@ -353,6 +353,9 @@ PAYMENT_FOLLOWUP_MAX_DAYS = env.int("PAYMENT_FOLLOWUP_MAX_DAYS", default=14)
 # L'API Swinmo « commande » ne renvoie pas le montant : si le webhook n'en porte pas non plus,
 # on accepte une commande PAID rattachée à notre paiement sans le contrôle du montant.
 # Mettre False pour exiger un montant vérifiable (les paiements resteront alors en attente).
+# Commandes gratuites Swinmo (code promo 100 %, tests) : acceptées par défaut.
+# METTRE False en production réelle une fois les tests terminés.
+SWINMO_ACCEPT_FREE_ORDERS = env.bool("SWINMO_ACCEPT_FREE_ORDERS", default=True)
 SWINMO_ALLOW_UNVERIFIED_AMOUNT = env.bool("SWINMO_ALLOW_UNVERIFIED_AMOUNT", default=True)
 
 # --- Paiements Swinmo -------------------------------------------------------
