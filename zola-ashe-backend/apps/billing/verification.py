@@ -52,10 +52,41 @@ def _find_order(payment, provider_tx_id_hint: str = "") -> dict | None:
     data = response.get("data") if isinstance(response, dict) else response
     if isinstance(data, dict):
         data = data.get("orders", [])
-    for order in data if isinstance(data, list) else []:
-        if isinstance(order, dict) and (order.get("metadata") or {}).get("reference") == payment.swinmo_ref:
+    orders = [o for o in (data if isinstance(data, list) else []) if isinstance(o, dict)]
+    for order in orders:
+        if (order.get("metadata") or {}).get("reference") == payment.swinmo_ref:
             return {**order, "orderId": order.get("orderId") or order.get("id") or ""}
+    # Swinmo ne renvoie pas toujours notre référence en lecture : repli sur l'unique commande
+    # de même montant dont l'identifiant n'est rattaché à aucun autre paiement.
+    candidates = [o for o in orders
+                  if _to_int(o.get("amount")) == payment.amount
+                  and not (o.get("metadata") or {}).get("reference")
+                  and _order_id_free(payment, str(o.get("orderId") or o.get("id") or ""))]
+    if len(candidates) == 1:
+        o = candidates[0]
+        return {**o, "orderId": o.get("orderId") or o.get("id") or ""}
     return None
+
+
+def _order_id_free(payment, order_id: str) -> bool:
+    """L'identifiant de commande Swinmo n'est rattaché à aucun AUTRE paiement."""
+    from .models import Payment
+    return bool(order_id) and not Payment.objects.filter(provider_tx_id=order_id).exclude(pk=payment.pk).exists()
+
+
+def _binds_without_reference(payment, order: dict, order_id: str) -> str:
+    """Rattachement d'une commande qui ne porte pas notre référence (la relecture Swinmo ne
+    renvoie pas toujours `metadata.reference`). Retourne une raison de refus, ou « » si OK.
+    Garde-fous : identifiant de commande jamais utilisé par un autre paiement, et e-mail de
+    la commande identique à celui du membre quand Swinmo le fournit."""
+    if not _order_id_free(payment, order_id):
+        return "identifiant de commande absent ou déjà rattaché à un autre paiement"
+    email = order.get("customerEmail") or order.get("email")
+    if email and str(email).strip().lower() != payment.user.email.strip().lower():
+        return "e-mail de la commande Swinmo ≠ e-mail du membre"
+    if not email:
+        logger.warning("[Swinmo] commande %s sans e-mail ni référence : rattachée par identifiant seul", order_id)
+    return ""
 
 
 def _to_int(value) -> int | None:
@@ -77,10 +108,14 @@ def verify_transaction_with_provider(payment, provider_tx_id_hint: str = "") -> 
     order_id = str(order.get("orderId") or "")
     # Concordance : la commande doit porter NOTRE référence interne.
     reference = (order.get("metadata") or {}).get("reference")
-    if reference != payment.swinmo_ref:
+    if reference is not None and reference != payment.swinmo_ref:
         return ProviderVerification(
             "unverifiable", order_id,
             reason=f"référence Swinmo {reference!r} ≠ référence interne {payment.swinmo_ref!r}")
+    if reference is None:
+        refusal = _binds_without_reference(payment, order, order_id)
+        if refusal:
+            return ProviderVerification("unverifiable", order_id, reason=refusal)
 
     status = str(order.get("status") or "").strip().lower()
     if status in FAILED_STATUSES:

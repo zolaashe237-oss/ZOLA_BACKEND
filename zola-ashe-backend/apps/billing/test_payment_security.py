@@ -116,6 +116,25 @@ class WebhookSecurityTests(APITestCase):
         self._refresh()
         self.assertEqual(self.payment.status, PaymentStatus.EN_ATTENTE)
 
+    def test_order_without_reference_binds_by_order_id_and_email(self):
+        """Swinmo ne renvoie pas metadata.reference en lecture : rattachement par commande + e-mail."""
+        order = _order("x")
+        order["data"]["metadata"] = {}
+        order["data"]["customerEmail"] = self.user.email
+        self.get_order.return_value = order
+        self.assertEqual(self._post(self._paid_event()).data["outcome"], "activated")
+        self._refresh()
+        self.assertEqual(self.payment.status, PaymentStatus.VALIDE)
+
+    def test_order_without_reference_other_email_rejected(self):
+        order = _order("x")
+        order["data"]["metadata"] = {}
+        order["data"]["customerEmail"] = "autre@t.io"
+        self.get_order.return_value = order
+        self.assertEqual(self._post(self._paid_event()).data["outcome"], "unverifiable")
+        self._refresh()
+        self.assertEqual(self.payment.status, PaymentStatus.EN_ATTENTE)
+
     # 4. Montant inférieur (pas de coupons) → AMOUNT_MISMATCH, pas d'accès
     def test_lower_amount_marks_mismatch_without_access(self):
         self.get_order.return_value = _order("ref_audit", amount=500)

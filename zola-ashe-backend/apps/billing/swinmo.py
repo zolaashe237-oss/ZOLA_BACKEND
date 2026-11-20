@@ -110,14 +110,20 @@ def list_orders_by_email(email: str, *, timeout: int = 15) -> dict:
     """Commandes Swinmo d'un client (GET /api/developer/{email}) — sert à retrouver une
     commande dont on ne connaît pas encore l'identifiant (webhook perdu)."""
     from urllib.parse import quote
-    url = f"{settings.SWINMO_API_URL.rstrip('/')}/api/developer/{quote(email)}"
-    try:
-        resp = requests.get(
-            url,
-            headers={"Authorization": f"Bearer {settings.SWINMO_SECRET_KEY}"},
-            timeout=timeout,
-        )
-        resp.raise_for_status()
-        return resp.json()
-    except requests.RequestException as exc:
-        raise SwinmoError(f"Échec de récupération des commandes Swinmo : {exc}") from exc
+    # La doc Swinmo est incohérente sur l'hôte (www…/api/developer/ vs api…/v1/developer/) :
+    # on essaie les deux, le premier qui répond fait foi.
+    urls = [f"{settings.SWINMO_API_URL.rstrip('/')}/api/developer/{quote(email)}",
+            f"https://api.swinmo.shop/v1/developer/{quote(email)}"]
+    last: Exception | None = None
+    for url in urls:
+        try:
+            resp = requests.get(
+                url,
+                headers={"Authorization": f"Bearer {settings.SWINMO_SECRET_KEY}"},
+                timeout=timeout,
+            )
+            resp.raise_for_status()
+            return resp.json()
+        except requests.RequestException as exc:
+            last = exc
+    raise SwinmoError(f"Échec de récupération des commandes Swinmo : {last}") from last
